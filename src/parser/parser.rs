@@ -3,6 +3,52 @@
 use chrono::{DateTime, FixedOffset, Local, NaiveDateTime, Offset, TimeZone};
 use chrono::Datelike;
 use std::collections::HashMap;
+use std::fmt;
+use std::error::Error;
+
+#[derive(Debug)]
+pub struct RawMessage(String);
+
+impl RawMessage {
+    pub fn new(s: String) -> RawMessage {
+        RawMessage(s)
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+#[derive(Debug)]
+pub struct LogParseError {
+    desc: String,
+    raw_msg: RawMessage
+}
+
+impl LogParseError {
+    pub fn new(desc: &str, raw: RawMessage) -> LogParseError {
+        LogParseError {
+            desc: desc.to_string(),
+            raw_msg: raw,
+        }
+    }
+
+    pub fn get_raw(&self) -> &RawMessage {
+        &self.raw_msg
+    }
+
+    pub fn get_desc(&self) -> &String {
+        &self.desc
+    }
+}
+
+impl fmt::Display for LogParseError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Log parse error: {}", self.desc)
+    }
+}
+
+impl Error for LogParseError {}
 
 #[derive(PartialEq, Debug)]
 pub enum ParsedValue {
@@ -129,19 +175,6 @@ pub fn str2type(s: &str) -> Option<ParsedValueType> {
 }
 
 #[derive(Debug)]
-pub struct RawMessage(String);
-
-impl RawMessage {
-    pub fn new(s: String) -> RawMessage {
-        RawMessage(s)
-    }
-
-    pub fn as_str(&self) -> &str {
-        self.0.as_str()
-    }
-}
-
-#[derive(Debug)]
 pub struct ParsedData<'a>(HashMap<&'a String, ParsedValue>);
 
 impl ParsedData<'_> {
@@ -169,7 +202,7 @@ impl ParsedMessage<'_> {
 }
 
 pub trait LogParser {
-    fn parse(&self, msg: RawMessage) -> Result<ParsedMessage, RawMessage>;
+    fn parse(&self, msg: RawMessage) -> Result<ParsedMessage, LogParseError>;
 }
 
 pub struct SpaceLineMerger {

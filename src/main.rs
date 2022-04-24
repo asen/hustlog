@@ -1,8 +1,10 @@
 // Copyright 2022 Asen Lazarov
 
+extern crate core;
+
 mod conf;
 mod parser;
-mod filter;
+mod query;
 
 use clap::Parser;
 use conf::*;
@@ -13,14 +15,15 @@ use std::io::{BufRead, Write};
 
 fn my_parse(raw: RawMessage, parser: &GrokParser,
             outp: &mut Box<dyn Write>, log: &mut Box<dyn Write>) -> Result<(), Box<dyn Error>>{
-    let parsed: Result<ParsedMessage, RawMessage> = parser.parse(raw);
+    let parsed: Result<ParsedMessage, LogParseError> = parser.parse(raw);
     if parsed.is_ok() {
         let ok: ParsedMessage = parsed.unwrap();
         outp.write(
             format!("PARSED: {:?} RAW: {:?}\n", &ok.get_parsed(), &ok.get_raw()).as_bytes(),
         )?;
     } else {
-        log.write(format!("ERROR: RAW: {:?}\n", parsed.err()).as_bytes())?;
+        let err : LogParseError = parsed.err().unwrap();
+        log.write(format!("ERROR:: {} RAW: {}\n", err.get_desc(), err.get_raw().as_str()).as_bytes())?;
     }
     Ok(())
 }

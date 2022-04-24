@@ -98,7 +98,7 @@ impl GrokParser {
 }
 
 impl LogParser for GrokParser {
-    fn parse(&self, msg: RawMessage) -> Result<ParsedMessage, RawMessage> {
+    fn parse(&self, msg: RawMessage) -> Result<ParsedMessage, LogParseError> {
         let mopt = self.pattern.match_against(msg.as_str());
         if mopt.is_some() {
             let m = mopt.unwrap();
@@ -117,12 +117,12 @@ impl LogParser for GrokParser {
                     }
                 }
                 if c.required && !found {
-                    return Err(msg)
+                    return Err(LogParseError::new( "required field not found - TODO",msg))
                 }
             }
             Ok(ParsedMessage::new(msg, ParsedData::new(hm)))
         } else {
-            Err(msg)
+            Err(LogParseError::new( "GROK pattern did not match",msg))
         }
     }
 }
