@@ -6,6 +6,7 @@ use std::error::Error;
 use std::fmt;
 use std::fs;
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
+use std::rc::Rc;
 
 #[derive(Debug, Clone)]
 pub struct ConfigError(String);
@@ -54,13 +55,13 @@ pub struct MyArgs {
     #[clap(short = 'e', long)]
     grok_extra_pattern: Vec<String>,
 
-    /// Filters, can be multiple
+    /// SQL query
     #[clap(short, long)]
-    filter: Vec<String>,
+    query: Option<String>,
 
     /// print the defoult patterns to the output stream and exit
     #[clap(long)]
-    pub grok_list_default_patterns: bool,
+    grok_list_default_patterns: bool,
 
     #[clap(long)]
     grok_with_alias_only: bool,
@@ -94,11 +95,11 @@ impl MyArgs {
                 } else {
                     (lookup_names_csv, false)
                 };
-                let lookup_names: Vec<String> = lookup_names_csv
+                let lookup_names: Vec<Rc<String>> = lookup_names_csv
                     .split(',')
                     .into_iter()
                     .filter(|&x| !x.is_empty())
-                    .map(|x| x.to_string())
+                    .map(|x| Rc::new(x.to_string()))
                     .collect();
                 if lookup_names.is_empty() {
                     Err(Box::new(ConfigError("Empty lookup names".into())))
@@ -108,7 +109,8 @@ impl MyArgs {
                     if col_type.is_none() {
                         Err(Box::new(ConfigError("Invalid column type".into())))
                     } else {
-                        Ok(GrokColumnDef::new(col_type.unwrap(), lookup_names, required))
+                        let col_name = lookup_names.first().unwrap().clone();
+                        Ok(GrokColumnDef::new(col_name, col_type.unwrap(), lookup_names, required))
                     }
                 }
             })
@@ -186,6 +188,8 @@ impl MyArgs {
     pub fn merge_multi_line(&self) -> bool {
         self.merge_multi_line
     }
+
+    pub fn query(&self) -> &Option<String>  { &self.query }
 }
 
 

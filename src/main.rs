@@ -5,12 +5,15 @@ extern crate core;
 mod conf;
 mod parser;
 mod query;
+mod query_processor;
 
 use clap::Parser;
 use conf::*;
 use parser::*;
 use std::error::Error;
 use std::io::{BufRead, Write};
+use crate::query::SqlSelectQuery;
+use crate::query_processor::{process_query_one_shot, ResultTable};
 
 
 fn my_parse(raw: RawMessage, parser: &GrokParser,
@@ -28,49 +31,102 @@ fn my_parse(raw: RawMessage, parser: &GrokParser,
     Ok(())
 }
 
+
+fn main_test(rdr: Box<dyn BufRead>, schema: &GrokSchema,
+             use_line_merger: bool,
+             outp: &mut Box<dyn Write>, log: &mut Box<dyn Write>
+        ) -> Result<(), Box<dyn Error>> {
+    let parser = GrokParser::new(schema.clone())?;
+    let mut line_merger = if use_line_merger {
+        Some(SpaceLineMerger::new())
+    } else {
+        None
+    };
+    for ln in rdr.lines() {
+        let s = ln?;
+        let raw = if line_merger.is_some() {
+            line_merger.as_mut().unwrap().add_line(s)
+        } else {
+            Some(RawMessage::new(s))
+        };
+        if raw.is_some() {
+            my_parse(raw.unwrap(), &parser, outp, log)?;
+        }
+    }
+    if line_merger.is_some() {
+        let raw = line_merger.unwrap().flush();
+        if raw.is_some() {
+            my_parse(raw.unwrap(), &parser, outp, log)?;
+        }
+    }
+    Ok(())
+}
+
+fn print_result_table(schema: &GrokSchema,
+                      rt: &ResultTable,
+                      out: &mut Box<dyn Write>,
+                      sep: &str) -> Result<(), Box<dyn Error>> {
+    for r in rt.get_rows() {
+        let pd = r.get_parsed();
+
+        let sv = schema.columns().iter().map(|cd| {
+            pd.get_value(cd.col_name()).unwrap_or(&ParsedValue::NullVal).to_rc_str()
+        }).collect::<Vec<_>>();
+        let s = sv.iter().map(|x| {
+            x.as_str()
+        }).collect::<Vec<_>>().join(sep);
+        out.write(s.as_bytes())?;
+        out.write("\n".as_bytes())?;
+    }
+    Ok(())
+}
+
+fn main_sql(rdr: Box<dyn BufRead>, schema: &GrokSchema, use_line_merger: bool,
+            query: &str,
+            outp: Box<dyn Write>, log: Box<dyn Write >) -> Result<(), Box<dyn Error>> {
+    let qry = SqlSelectQuery::new(query)?;
+    let parser = GrokParser::new(schema.clone())?;
+    let line_merger: Option<Box<dyn LineMerger>> = if use_line_merger {
+        Some(Box::new(SpaceLineMerger::new()))
+    } else {
+        None
+    };
+    let eror_processor = ParseErrorProcessor::new(log);
+    let pit = ParserIterator::new(Box::new(parser), line_merger,
+                                  Box::new(rdr.lines().into_iter()), eror_processor);
+    let res = process_query_one_shot(schema, &qry, pit)?;
+    print_result_table(schema, &res, &mut Box::new(outp), ",")
+}
+
+fn main_print_default_patterns(mut outp: Box<dyn Write>) -> Result<(), Box<dyn Error>>{
+    for (p,s) in GrokParser::default_patterns() {
+        outp.write(p.as_bytes())?;
+        outp.write(" ".as_bytes())?;
+        outp.write(s.as_bytes())?;
+        outp.write("\n".as_bytes())?;
+    }
+    return Ok(())
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let args: MyArgs = MyArgs::parse();
-    println!("ARGS: {:?}", args);
+    //println!("ARGS: {:?}", args);
     let mut log = args.get_logger();
     let rdr = args.get_buf_read()?;
     let mut outp: Box<dyn Write> = args.get_outp()?;
     if args.grok_list_default_patterns() {
-        for (p,s) in GrokParser::default_patterns() {
-            outp.write(p.as_bytes())?;
-            outp.write(" ".as_bytes())?;
-            outp.write(s.as_bytes())?;
-            outp.write("\n".as_bytes())?;
-        }
-        return Ok(())
+        return main_print_default_patterns(outp)
     }
     //println!("{:?}", args);
     let schema = args.get_grok_schema()?;
     //println!("{:?}", schema);
     if schema.is_some() {
-        let parser = GrokParser::new(schema.unwrap())?;
-        let mut line_merger = if args.merge_multi_line() {
-            Some(SpaceLineMerger::new())
+        if let Some(q) = args.query() {
+            main_sql(rdr, &schema.unwrap(), args.merge_multi_line(),
+                     q, Box::new(outp), Box::new(log))
         } else {
-            None
-        };
-        for ln in rdr.lines() {
-            let s = ln?;
-            let raw = if line_merger.is_some() {
-                line_merger.as_mut().unwrap().add_line(s)
-            } else {
-                Some(RawMessage::new(s))
-            };
-            if raw.is_some() {
-                my_parse(raw.unwrap(), &parser, &mut outp, &mut log)?;
-            }
+            main_test(rdr, &schema.unwrap(), args.merge_multi_line(), &mut outp, &mut log)
         }
-        if line_merger.is_some() {
-            let raw = line_merger.unwrap().flush();
-            if raw.is_some() {
-                my_parse(raw.unwrap(), &parser, &mut outp, &mut log)?;
-            }
-        }
-        Ok(())
     } else {
         Err(Box::new(ConfigError::new(
             "Missing grok pattern or column defs",

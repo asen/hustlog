@@ -1,4 +1,6 @@
-use sqlparser::ast::{Query, Statement, SetExpr, Select};
+use std::error::Error;
+use std::fmt;
+use sqlparser::ast::{Query, Statement, SetExpr, Select, Expr, OrderByExpr};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserError};
 
@@ -18,6 +20,15 @@ impl SqlParserError {
     }
 }
 
+impl fmt::Display for SqlParserError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Log parse error: {:?}", self)
+    }
+}
+
+impl Error for SqlParserError {}
+
+
 #[derive(Debug)]
 pub struct SqlSelectQuery {
     ast_query: Box<Query>,
@@ -32,6 +43,21 @@ impl SqlSelectQuery {
         }
     }
 
+    pub fn get_limit(&self) -> Option<&Expr> {
+        self.ast_query.limit.as_ref()
+    }
+
+    pub fn get_offset(&self) -> Option<&Expr> {
+        if self.ast_query.offset.is_some() {
+            Some(&self.ast_query.offset.as_ref().unwrap().value)
+        } else {
+            None
+        }
+    }
+
+    // pub fn get_order_by(&self) -> &Vec<OrderByExpr> {
+    //     &self.ast_query.order_by
+    // }
 }
 
 impl SqlSelectQuery {
@@ -87,6 +113,7 @@ impl SqlSelectQuery {
 
 }
 
+#[cfg(test)]
 fn parse_sql(sql: &str) -> Result<SqlSelectQuery, SqlParserError> {
     SqlSelectQuery::new(sql)
 }

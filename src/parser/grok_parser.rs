@@ -4,21 +4,24 @@ extern crate grok;
 use std::collections::HashMap;
 
 use std::error::Error;
+use std::rc::Rc;
 
 use grok::{Grok, Pattern, patterns};
 
 use crate::parser::parser::*;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct GrokColumnDef {
+    col_name: Rc<String>,
     col_type: ParsedValueType,
-    lookup_names: Vec<String>,
+    lookup_names: Vec<Rc<String>>,
     required: bool,
 }
 
 impl GrokColumnDef {
-    pub fn new(col_type: ParsedValueType, lookup_names: Vec<String>, required: bool) -> GrokColumnDef {
+    pub fn new(col_name: Rc<String>, col_type: ParsedValueType, lookup_names: Vec<Rc<String>>, required: bool) -> GrokColumnDef {
         Self {
+            col_name,
             col_type,
             lookup_names,
             required,
@@ -34,14 +37,19 @@ impl GrokColumnDef {
 
     pub fn clone(&self) -> GrokColumnDef {
         GrokColumnDef {
+            col_name: self.col_name.clone(),
             col_type: self.col_type.clone(),
             lookup_names: self.lookup_names.iter().map(|s| s.clone()).collect(),
             required: self.required,
         }
     }
+
+    pub fn col_name(&self) -> &String {
+        &self.col_name
+    }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct GrokSchema {
     pattern: String,
     columns: Vec<GrokColumnDef>,
@@ -65,6 +73,10 @@ impl GrokSchema {
             extra_patterns,
             grok_with_alias_only,
         }
+    }
+
+    pub fn columns(&self) -> &Vec<GrokColumnDef> {
+        &self.columns
     }
 }
 
@@ -95,6 +107,10 @@ impl GrokParser {
             (p.0.to_string(), p.1.to_string())
         }).collect()
     }
+
+    // pub fn get_schema(&self) -> &GrokSchema {
+    //     &self.schema
+    // }
 }
 
 impl LogParser for GrokParser {
@@ -102,7 +118,7 @@ impl LogParser for GrokParser {
         let mopt = self.pattern.match_against(msg.as_str());
         if mopt.is_some() {
             let m = mopt.unwrap();
-            let mut hm: HashMap<&String, ParsedValue> = HashMap::new();
+            let mut hm: HashMap<Rc<String>, ParsedValue> = HashMap::new();
             for c in &self.schema.columns {
                 let mut found = false;
                 for lnm in &c.lookup_names {
@@ -110,7 +126,7 @@ impl LogParser for GrokParser {
                     if mm.is_some() {
                         let opv: Option<ParsedValue> = str2val(mm.unwrap(), &c.col_type);
                         if opv.is_some() {
-                            hm.insert(lnm, opv.unwrap());
+                            hm.insert(lnm.clone(), opv.unwrap());
                             found = true;
                             break;
                         }
@@ -138,13 +154,15 @@ mod tests {
             load_default: false,
             columns: vec![
                 GrokColumnDef::new(
+                    Rc::new("logts".to_string()),
                     ParsedValueType::TimeType(TimeTypeFormat::new("%Y-%m-%dT%H:%M:%S.%3f%z")),
-                    vec![String::from("logts")],
+                    vec![Rc::new(String::from("logts"))],
                     true
                 ),
                 GrokColumnDef {
+                    col_name: Rc::new("msg".to_string()),
                     col_type: ParsedValueType::StrType,
-                    lookup_names: vec![String::from("msg")],
+                    lookup_names: vec![Rc::new(String::from("msg"))],
                     required: true,
                 },
             ],
@@ -179,13 +197,15 @@ mod tests {
             load_default: true,
             columns: vec![
                 GrokColumnDef::new(
+                    Rc::new("timestamp".to_string()),
                     ParsedValueType::TimeType(TimeTypeFormat::new("%b %e %H:%M:%S")),
-                    vec![String::from("timestamp")],
+                    vec![Rc::new(String::from("timestamp"))],
                     true
                 ),
                 GrokColumnDef {
+                    col_name: Rc::new("message".to_string()),
                     col_type: ParsedValueType::StrType,
-                    lookup_names: vec![String::from("message")],
+                    lookup_names: vec![Rc::new(String::from("message"))],
                     required: true,
                 },
             ],
