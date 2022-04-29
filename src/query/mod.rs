@@ -1,6 +1,7 @@
 use std::error::Error;
 use std::fmt;
-use sqlparser::ast::{Query, Statement, SetExpr, Select, Expr};
+
+use sqlparser::ast::{Expr, Query, Select, SetExpr, Statement};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserError};
 
@@ -27,7 +28,6 @@ impl fmt::Display for SqlParserError {
 }
 
 impl Error for SqlParserError {}
-
 
 #[derive(Debug)]
 pub struct SqlSelectQuery {
@@ -61,16 +61,17 @@ impl SqlSelectQuery {
 }
 
 impl SqlSelectQuery {
-
     fn from_query(q: &Query) -> Result<SqlSelectQuery, SqlParserError> {
         if q.with.is_some() {
-            return Err(SqlParserError::not_supported("WITH is not supported"))
+            return Err(SqlParserError::not_supported("WITH is not supported"));
         }
         if q.lock.is_some() {
-            return Err(SqlParserError::not_supported("LOCK is not supported"))
+            return Err(SqlParserError::not_supported("LOCK is not supported"));
         }
         if q.fetch.is_some() {
-            return Err(SqlParserError::not_supported("FETCH is currently not supported"))
+            return Err(SqlParserError::not_supported(
+                "FETCH is currently not supported",
+            ));
         }
         if let SetExpr::Select(_) = &q.body {
             // q.body;
@@ -82,7 +83,7 @@ impl SqlSelectQuery {
             })
         } else {
             Err(SqlParserError::not_supported(
-                "Only SELECT queries are supported for now"
+                "Only SELECT queries are supported for now",
             ))
         }
     }
@@ -94,7 +95,7 @@ impl SqlSelectQuery {
             Ok(vec) => {
                 if vec.len() > 1 {
                     Err(SqlParserError::not_supported(
-                        "Can not process multiple statements for now"
+                        "Can not process multiple statements for now",
                     ))
                 } else {
                     let stmt = vec.iter().next().unwrap();
@@ -102,7 +103,7 @@ impl SqlSelectQuery {
                         SqlSelectQuery::from_query(b)
                     } else {
                         Err(SqlParserError::not_supported(
-                            "Only queries are supported for now"
+                            "Only queries are supported for now",
                         ))
                     }
                 }
@@ -110,7 +111,6 @@ impl SqlSelectQuery {
             Err(x) => Err(SqlParserError::parse_error(&x.to_string())),
         }
     }
-
 }
 
 #[cfg(test)]

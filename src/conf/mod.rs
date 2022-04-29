@@ -1,12 +1,14 @@
 // Copyright 2022 Asen Lazarov
 
-use crate::parser::*;
-use clap::Parser;
 use std::error::Error;
 use std::fmt;
 use std::fs;
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::rc::Rc;
+
+use clap::Parser;
+
+use crate::parser::*;
 
 #[derive(Debug, Clone)]
 pub struct ConfigError(String);
@@ -30,7 +32,6 @@ impl Error for ConfigError {}
 #[clap(version = "0.1")]
 #[clap(about = "A tool to mess with logs", long_about = None)]
 pub struct MyArgs {
-
     ///Input source
     #[clap(short, long)]
     input: Option<String>,
@@ -81,15 +82,12 @@ pub struct MyArgs {
 }
 
 impl MyArgs {
-
-    fn parse_col_defs(schema_columns: &Vec<String>) -> Result<Vec<GrokColumnDef>,Box<dyn Error>> {
+    fn parse_col_defs(schema_columns: &Vec<String>) -> Result<Vec<GrokColumnDef>, Box<dyn Error>> {
         let grok_schema_cols: Vec<_> = schema_columns
             .iter()
             .map(|x| {
                 let mut my_iter = x.splitn(2, ":").into_iter();
-                let lookup_names_csv = my_iter
-                    .next()
-                    .unwrap();
+                let lookup_names_csv = my_iter.next().unwrap();
                 let (lookup_names_csv, required) = if lookup_names_csv.starts_with('+') {
                     (lookup_names_csv.strip_prefix('+').unwrap(), true)
                 } else {
@@ -110,7 +108,12 @@ impl MyArgs {
                         Err(Box::new(ConfigError("Invalid column type".into())))
                     } else {
                         let col_name = lookup_names.first().unwrap().clone();
-                        Ok(GrokColumnDef::new(col_name, col_type.unwrap(), lookup_names, required))
+                        Ok(GrokColumnDef::new(
+                            col_name,
+                            col_type.unwrap(),
+                            lookup_names,
+                            required,
+                        ))
                     }
                 }
             })
@@ -126,7 +129,7 @@ impl MyArgs {
         Ok(grok_schema_cols)
     }
 
-    fn get_grok_col_defs(&self) -> Result<Vec<GrokColumnDef>,Box<dyn Error>> {
+    fn get_grok_col_defs(&self) -> Result<Vec<GrokColumnDef>, Box<dyn Error>> {
         MyArgs::parse_col_defs(&self.grok_schema_column)
     }
 
@@ -189,9 +192,10 @@ impl MyArgs {
         self.merge_multi_line
     }
 
-    pub fn query(&self) -> &Option<String>  { &self.query }
+    pub fn query(&self) -> &Option<String> {
+        &self.query
+    }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -199,8 +203,11 @@ mod tests {
 
     #[test]
     fn parse_col_defs_works() {
-        let parsed =
-            MyArgs::parse_col_defs(&vec!["timestamp:ts:%b %e %H:%M:%S".to_string(),"message".to_string()]).unwrap();
+        let parsed = MyArgs::parse_col_defs(&vec![
+            "timestamp:ts:%b %e %H:%M:%S".to_string(),
+            "message".to_string(),
+        ])
+        .unwrap();
         println!("{:?}", parsed)
     }
 }

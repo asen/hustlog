@@ -1,14 +1,15 @@
 // Copyright 2022 Asen Lazarov
 
 use std::cmp::Ordering;
-use chrono::Datelike;
-use chrono::{DateTime, FixedOffset, Local, NaiveDateTime, Offset, TimeZone};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
 use std::io;
 use std::io::Write;
 use std::rc::Rc;
+
+use chrono::Datelike;
+use chrono::{DateTime, FixedOffset, Local, NaiveDateTime, Offset, TimeZone};
 
 #[derive(Debug)]
 pub struct RawMessage(String);
@@ -67,9 +68,13 @@ pub enum ParsedValue {
 impl PartialEq for ParsedValue {
     fn eq(&self, other: &Self) -> bool {
         match self {
-            ParsedValue::NullVal => { other == &ParsedValue::NullVal }
+            ParsedValue::NullVal => other == &ParsedValue::NullVal,
             ParsedValue::BoolVal(b) => {
-                if let ParsedValue::BoolVal(x) = other { x == b } else {false}
+                if let ParsedValue::BoolVal(x) = other {
+                    x == b
+                } else {
+                    false
+                }
             }
             ParsedValue::LongVal(l) => {
                 if let ParsedValue::LongVal(x) = other {
@@ -113,95 +118,44 @@ impl PartialOrd for ParsedValue {
         match self {
             ParsedValue::NullVal => {
                 match other {
-                    ParsedValue::NullVal => {
-                        Some(Ordering::Equal)
-                    }
-                    _ => Some(Ordering::Less) // NULL is lesser than anything???
+                    ParsedValue::NullVal => Some(Ordering::Equal),
+                    _ => Some(Ordering::Less), // NULL is lesser than anything???
                 }
             }
-            ParsedValue::BoolVal(b) => {
-                match other {
-                    ParsedValue::NullVal => {
-                        Some(Ordering::Greater)
-                    }
-                    ParsedValue::BoolVal(x) => {
-                        b.partial_cmp(x)
-                    }
-                    _ => Some(Ordering::Less)
-                }
-            }
-            ParsedValue::LongVal(l) => {
-                match other {
-                    ParsedValue::NullVal => {
-                        Some(Ordering::Greater)
-                    }
-                    ParsedValue::BoolVal(_) => {
-                        Some(Ordering::Greater)
-                    }
-                    ParsedValue::LongVal(x) => {
-                        l.partial_cmp(x)
-                    }
-                    ParsedValue::DoubleVal(x) => {
-                        (*l as f64).partial_cmp(x)
-                    }
-                    ParsedValue::TimeVal(x) => {
-                        l.partial_cmp(&x.timestamp_millis())
-                    }
-                    ParsedValue::StrVal(_) => {
-                        Some(Ordering::Less)
-                    }
-                }
-            }
-            ParsedValue::DoubleVal(d) => {
-                match other {
-                    ParsedValue::NullVal => {
-                        Some(Ordering::Greater)
-                    }
-                    ParsedValue::BoolVal(_) => {
-                        Some(Ordering::Greater)
-                    }
-                    ParsedValue::LongVal(x) => {
-                        d.partial_cmp(&(*x as f64))
-                    }
-                    ParsedValue::DoubleVal(x) => {
-                        d.partial_cmp(x)
-                    }
-                    ParsedValue::TimeVal(x) => {
-                        d.partial_cmp(&(x.timestamp_millis() as f64))
-                    }
-                    ParsedValue::StrVal(_) => {
-                        Some(Ordering::Less)
-                    }
-                }
-            }
-            ParsedValue::TimeVal(t) => {
-                match other {
-                    ParsedValue::NullVal => {
-                        Some(Ordering::Greater)
-                    }
-                    ParsedValue::BoolVal(_) => {
-                        Some(Ordering::Greater)
-                    }
-                    ParsedValue::LongVal(x) => {
-                        t.timestamp_millis().partial_cmp(x)
-                    }
-                    ParsedValue::DoubleVal(x) => {
-                        (t.timestamp_millis() as f64).partial_cmp(x)
-                    }
-                    ParsedValue::TimeVal(x) => {
-                        t.timestamp_nanos().partial_cmp(&x.timestamp_nanos())
-                    }
-                    ParsedValue::StrVal(_) => {
-                        Some(Ordering::Less)
-                    }
-                }
-            }
+            ParsedValue::BoolVal(b) => match other {
+                ParsedValue::NullVal => Some(Ordering::Greater),
+                ParsedValue::BoolVal(x) => b.partial_cmp(x),
+                _ => Some(Ordering::Less),
+            },
+            ParsedValue::LongVal(l) => match other {
+                ParsedValue::NullVal => Some(Ordering::Greater),
+                ParsedValue::BoolVal(_) => Some(Ordering::Greater),
+                ParsedValue::LongVal(x) => l.partial_cmp(x),
+                ParsedValue::DoubleVal(x) => (*l as f64).partial_cmp(x),
+                ParsedValue::TimeVal(x) => l.partial_cmp(&x.timestamp_millis()),
+                ParsedValue::StrVal(_) => Some(Ordering::Less),
+            },
+            ParsedValue::DoubleVal(d) => match other {
+                ParsedValue::NullVal => Some(Ordering::Greater),
+                ParsedValue::BoolVal(_) => Some(Ordering::Greater),
+                ParsedValue::LongVal(x) => d.partial_cmp(&(*x as f64)),
+                ParsedValue::DoubleVal(x) => d.partial_cmp(x),
+                ParsedValue::TimeVal(x) => d.partial_cmp(&(x.timestamp_millis() as f64)),
+                ParsedValue::StrVal(_) => Some(Ordering::Less),
+            },
+            ParsedValue::TimeVal(t) => match other {
+                ParsedValue::NullVal => Some(Ordering::Greater),
+                ParsedValue::BoolVal(_) => Some(Ordering::Greater),
+                ParsedValue::LongVal(x) => t.timestamp_millis().partial_cmp(x),
+                ParsedValue::DoubleVal(x) => (t.timestamp_millis() as f64).partial_cmp(x),
+                ParsedValue::TimeVal(x) => t.timestamp_nanos().partial_cmp(&x.timestamp_nanos()),
+                ParsedValue::StrVal(_) => Some(Ordering::Less),
+            },
             ParsedValue::StrVal(s) => {
                 match other {
-                    ParsedValue::StrVal(x) => {
-                        s.as_str().partial_cmp(x.as_str())
-                    }
-                    _ => { // String is greater than all others
+                    ParsedValue::StrVal(x) => s.as_str().partial_cmp(x.as_str()),
+                    _ => {
+                        // String is greater than all others
                         Some(Ordering::Greater)
                     }
                 }
@@ -318,14 +272,15 @@ pub fn str2val(s: &str, ctype: &ParsedValueType) -> Option<ParsedValue> {
         ParsedValueType::LongType => s.parse::<i64>().ok().map(|v| ParsedValue::LongVal(v)),
         ParsedValueType::DoubleType => s.parse::<f64>().ok().map(|v| ParsedValue::DoubleVal(v)),
         ParsedValueType::TimeType(fmt) => parse_ts(s, fmt).map(|v| ParsedValue::TimeVal(v)),
-        ParsedValueType::NullType => { Some(ParsedValue::NullVal) }
+        ParsedValueType::NullType => Some(ParsedValue::NullVal),
         ParsedValueType::BoolType => {
             if s.eq_ignore_ascii_case("true") {
                 Some(ParsedValue::BoolVal(true))
             } else if s.eq_ignore_ascii_case("false") {
                 Some(ParsedValue::BoolVal(false))
-            } else { None }
-
+            } else {
+                None
+            }
         }
     }
 }
@@ -386,21 +341,19 @@ pub trait LogParser {
 }
 
 pub struct ParseErrorProcessor {
-    stderr: Box<dyn Write>
+    stderr: Box<dyn Write>,
 }
 
 impl ParseErrorProcessor {
     pub fn new(stderr: Box<dyn Write>) -> ParseErrorProcessor {
-        ParseErrorProcessor { stderr : stderr }
+        ParseErrorProcessor { stderr: stderr }
     }
 
     pub fn process(&mut self, msg: RawMessage, err: &str) -> () {
         let s = ["PARSE ERROR: ", err, " RAW: ", msg.as_str(), "\n"].join("");
         self.stderr.write(s.as_bytes()).unwrap();
     }
-
 }
-
 
 pub struct SpaceLineMerger {
     buf: Vec<String>,
@@ -518,11 +471,11 @@ impl Iterator for ParserIterator {
         if let Some(raw) = self.next_raw() {
             let mut parsed = self.parser.parse(raw);
             while parsed.is_err() {
-                let LogParseError{ raw_msg, desc } = parsed.err().unwrap();
+                let LogParseError { raw_msg, desc } = parsed.err().unwrap();
                 self.error_processor.process(raw_msg, &desc);
                 let nraw = self.next_raw();
                 if nraw.is_none() {
-                    return None
+                    return None;
                 }
                 parsed = self.parser.parse(nraw.unwrap());
             }
@@ -536,10 +489,12 @@ impl Iterator for ParserIterator {
 #[cfg(test)]
 mod tests {
     use std::io::BufWriter;
+
     use chrono::TimeZone;
 
-    use super::*;
     use crate::parser::*;
+
+    use super::*;
 
     #[test]
     fn chrono_parse_works() {
@@ -550,7 +505,7 @@ mod tests {
 
     #[test]
     fn str2val_works() {
-         assert_eq!(
+        assert_eq!(
             str2val("4", &ParsedValueType::LongType).unwrap(),
             ParsedValue::LongVal(4i64)
         );
@@ -645,14 +600,14 @@ mod tests {
         ];
 
         {
-            let lines: Vec<io::Result<String>> = lines.clone().iter().map(|&x| {
-                Ok(x.to_string())
-            }).collect();
+            let lines: Vec<io::Result<String>> =
+                lines.clone().iter().map(|&x| Ok(x.to_string())).collect();
             let parser = GrokParser::new(schema.clone()).unwrap();
             let mut pit = ParserIterator::new(
-                Box::new(parser), None,
+                Box::new(parser),
+                None,
                 Box::new(lines.into_iter()),
-                ParseErrorProcessor::new(Box::new(BufWriter::new(io::stderr())))
+                ParseErrorProcessor::new(Box::new(BufWriter::new(io::stderr()))),
             );
             println!("No line merger");
             while let Some(x) = pit.next() {
@@ -661,14 +616,15 @@ mod tests {
         }
 
         {
-            let lines: Vec<io::Result<String>> = lines.clone().iter().map(|&x| {
-                Ok(x.to_string())
-            }).collect();
+            let lines: Vec<io::Result<String>> =
+                lines.clone().iter().map(|&x| Ok(x.to_string())).collect();
             let parser = GrokParser::new(schema.clone()).unwrap();
             let mut pit = ParserIterator::new(
-                Box::new(parser), Some(Box::new(SpaceLineMerger::new())),
+                Box::new(parser),
+                Some(Box::new(SpaceLineMerger::new())),
                 Box::new(lines.into_iter()),
-                ParseErrorProcessor::new(Box::new(BufWriter::new(io::stderr()))));
+                ParseErrorProcessor::new(Box::new(BufWriter::new(io::stderr()))),
+            );
             println!("With line merger");
             while let Some(x) = pit.next() {
                 println!("{:?}", x)

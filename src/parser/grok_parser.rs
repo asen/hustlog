@@ -1,12 +1,12 @@
 // Copyright 2022 Asen Lazarov
 
 extern crate grok;
-use std::collections::HashMap;
 
+use std::collections::HashMap;
 use std::error::Error;
 use std::rc::Rc;
 
-use grok::{Grok, Pattern, patterns};
+use grok::{patterns, Grok, Pattern};
 
 use crate::parser::parser::*;
 
@@ -19,7 +19,12 @@ pub struct GrokColumnDef {
 }
 
 impl GrokColumnDef {
-    pub fn new(col_name: Rc<String>, col_type: ParsedValueType, lookup_names: Vec<Rc<String>>, required: bool) -> GrokColumnDef {
+    pub fn new(
+        col_name: Rc<String>,
+        col_type: ParsedValueType,
+        lookup_names: Vec<Rc<String>>,
+        required: bool,
+    ) -> GrokColumnDef {
         Self {
             col_name,
             col_type,
@@ -102,10 +107,11 @@ impl GrokParser {
         Result::Ok(GrokParser { schema, pattern })
     }
 
-    pub fn default_patterns() -> Vec<(String,String)> {
-        patterns().iter().map(|&p| {
-            (p.0.to_string(), p.1.to_string())
-        }).collect()
+    pub fn default_patterns() -> Vec<(String, String)> {
+        patterns()
+            .iter()
+            .map(|&p| (p.0.to_string(), p.1.to_string()))
+            .collect()
     }
 
     // pub fn get_schema(&self) -> &GrokSchema {
@@ -133,12 +139,12 @@ impl LogParser for GrokParser {
                     }
                 }
                 if c.required && !found {
-                    return Err(LogParseError::new( "required field not found - TODO",msg))
+                    return Err(LogParseError::new("required field not found - TODO", msg));
                 }
             }
             Ok(ParsedMessage::new(msg, ParsedData::new(hm)))
         } else {
-            Err(LogParseError::new( "GROK pattern did not match",msg))
+            Err(LogParseError::new("GROK pattern did not match", msg))
         }
     }
 }
@@ -157,7 +163,7 @@ mod tests {
                     Rc::new("logts".to_string()),
                     ParsedValueType::TimeType(TimeTypeFormat::new("%Y-%m-%dT%H:%M:%S.%3f%z")),
                     vec![Rc::new(String::from("logts"))],
-                    true
+                    true,
                 ),
                 GrokColumnDef {
                     col_name: Rc::new("msg".to_string()),
@@ -200,7 +206,7 @@ mod tests {
                     Rc::new("timestamp".to_string()),
                     ParsedValueType::TimeType(TimeTypeFormat::new("%b %e %H:%M:%S")),
                     vec![Rc::new(String::from("timestamp"))],
-                    true
+                    true,
                 ),
                 GrokColumnDef {
                     col_name: Rc::new("message".to_string()),
@@ -226,7 +232,7 @@ mod tests {
         let line_no_msg = "Apr 22 02:34:54 actek-mac";
         let raw_msg = RawMessage::new(String::from(line_no_msg));
         let parsed = parser.parse(raw_msg);
-        assert_eq!(parsed.as_ref().err().is_some(),true);
+        assert_eq!(parsed.as_ref().err().is_some(), true);
         println!("{:?}", parsed)
     }
 }
