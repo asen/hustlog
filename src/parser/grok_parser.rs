@@ -118,7 +118,7 @@ impl LogParser for GrokParser {
         let mopt = self.pattern.match_against(msg.as_str());
         if mopt.is_some() {
             let m = mopt.unwrap();
-            let mut hm: HashMap<Rc<String>, ParsedValue> = HashMap::new();
+            let mut hm: HashMap<Rc<str>, ParsedValue> = HashMap::new();
             for c in &self.schema.columns {
                 let mut found = false;
                 for lnm in &c.lookup_names {
@@ -126,7 +126,7 @@ impl LogParser for GrokParser {
                     if mm.is_some() {
                         let opv: Option<ParsedValue> = str2val(mm.unwrap(), &c.col_type);
                         if opv.is_some() {
-                            hm.insert(lnm.clone(), opv.unwrap());
+                            hm.insert(Rc::from(lnm.as_str()), opv.unwrap());
                             found = true;
                             break;
                         }

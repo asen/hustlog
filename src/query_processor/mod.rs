@@ -1,6 +1,7 @@
+use std::collections::HashMap;
 use crate::parser::*;
 use crate::query::*;
-use sqlparser::ast::{BinaryOperator, Expr, Function, FunctionArg, FunctionArgExpr, ObjectName, SelectItem, UnaryOperator, Value};
+use sqlparser::ast::{BinaryOperator, Expr, Function, FunctionArg, FunctionArgExpr, Ident, ObjectName, SelectItem, UnaryOperator, Value};
 use std::error::Error;
 use std::fmt;
 use std::ops::{Add, Div, Mul, Rem, Sub};
@@ -66,6 +67,83 @@ impl ResultTable {
     // }
 }
 
+struct StaticCtx<'a> {
+    pd: Option<&'a ParsedData>
+}
+
+const EMPTY_CTX: StaticCtx = StaticCtx {
+    pd: None
+};
+
+impl StaticCtx<'_> {
+
+    fn get_value(&self, key: &str) -> Option<ParsedValue> {
+        match self.pd {
+           Some(pdd) => pdd.get_value(key).map(|x| { x.clone() }),
+           None => None
+        }
+    }
+
+    fn is_none(&self) -> bool { self.pd.is_none() }
+}
+
+struct LazyExpr {
+    expr: Expr,
+    res: Option<Result<Option<ParsedValue>,QueryError>>,
+}
+
+impl LazyExpr {
+    fn new(expr: &Expr) -> LazyExpr {
+        Self {
+            expr: expr.clone(),
+            res: None
+        }
+    }
+
+    fn err(qerr: QueryError) -> LazyExpr {
+        Self {
+            expr: Expr::Value(Value::Null),
+            res: Some(Err(qerr))
+        }
+    }
+
+    fn clone(&self) -> LazyExpr {
+        Self {
+            expr: self.expr.clone(),
+            res: self.res.clone()
+        }
+    }
+}
+
+struct LazyContext {
+    hm: HashMap<Rc<str>,LazyExpr>,
+}
+
+impl LazyContext {
+
+    fn empty() -> LazyContext {
+        Self {
+            hm: HashMap::new()
+        }
+    }
+
+    fn get_value(&mut self, key: &str, ctx: &StaticCtx) -> Result<Option<ParsedValue>,QueryError> {
+        let lex_opt = self.hm.get_mut(key);
+        if lex_opt.is_none() {
+            return Ok(None)
+        }
+        let lex = lex_opt.unwrap();
+        if lex.res.is_some() {
+            return lex.res.as_ref().unwrap().clone()
+        }
+        //TODO FIXME ??? cant't pass self as lazy context
+        let pv = eval_expr(&lex.expr, ctx, &mut LazyContext::empty())?;
+        lex.res = Some(Ok(Some(pv)));
+        return lex.res.as_ref().unwrap().clone()
+    }
+
+}
+
 fn eval_aritmethic_op<T>(lval: T, rval: T, op: &BinaryOperator) -> Result<T, QueryError>
     where T: Add<Output = T> +
     Mul<Output = T> +
@@ -103,7 +181,7 @@ fn object_name_to_string(onm: &ObjectName) -> String {
     }).collect::<Vec<&str>>().join(",")
 }
 
-fn func_arg_to_pv(arg: &FunctionArg, ctx: Option<&ParsedData>) -> Result<ParsedValue, QueryError> {
+fn func_arg_to_pv(arg: &FunctionArg, ctx: &StaticCtx, dctx: &mut LazyContext) -> Result<ParsedValue, QueryError> {
     match arg {
         FunctionArg::Named { .. } => {
             Err(QueryError::not_supported("Named function arguments are not supported yet"))
@@ -111,7 +189,7 @@ fn func_arg_to_pv(arg: &FunctionArg, ctx: Option<&ParsedData>) -> Result<ParsedV
         FunctionArg::Unnamed(fax) => {
             match fax {
                 FunctionArgExpr::Expr(xp) => {
-                    eval_expr(xp, ctx)
+                    eval_expr(xp, ctx, dctx)
                 }
                 FunctionArgExpr::QualifiedWildcard(_) => {
                     Err(QueryError::not_supported("FunctionArgExpr::QualifiedWildcard"))
@@ -124,15 +202,15 @@ fn func_arg_to_pv(arg: &FunctionArg, ctx: Option<&ParsedData>) -> Result<ParsedV
     }
 }
 
-fn eval_function_date(fun: &Function, ctx: Option<&ParsedData>) -> Result<ParsedValue, QueryError> {
+fn eval_function_date(fun: &Function, ctx: &StaticCtx, dctx: &mut LazyContext) -> Result<ParsedValue, QueryError> {
     let mut args_iter = fun.args.iter();
     let cur_arg: &FunctionArg = args_iter.next().ok_or(QueryError::new("DATE function requires arguments"))?;
-    let curv = func_arg_to_pv(cur_arg, ctx)?;
+    let curv = func_arg_to_pv(cur_arg, ctx, dctx)?;
     let tformat = if let ParsedValue::StrVal(rs) = curv {
         Ok(TimeTypeFormat::new(rs.as_str()))
     } else { Err(QueryError::new("DATE function first argument must be a time format string")) }?;
     let cur_arg: &FunctionArg = args_iter.next().ok_or(QueryError::new("DATE function requires arguments"))?;
-    let curv = func_arg_to_pv(cur_arg, ctx)?;
+    let curv = func_arg_to_pv(cur_arg, ctx, dctx)?;
     match curv {
         ParsedValue::TimeVal(d) => { Ok(ParsedValue::TimeVal(d)) }
         ParsedValue::StrVal(s) => {
@@ -147,21 +225,23 @@ fn eval_function_date(fun: &Function, ctx: Option<&ParsedData>) -> Result<Parsed
 
 }
 
-fn eval_function(fun: &Function, ctx: Option<&ParsedData>) -> Result<ParsedValue, QueryError> {
+fn eval_function(fun: &Function, ctx: &StaticCtx, dctx: &mut LazyContext) -> Result<ParsedValue, QueryError> {
     let fun_name = object_name_to_string(&fun.name);
     match fun_name.as_str() {
-        "DATE" => eval_function_date(fun, ctx),
+        "DATE" => eval_function_date(fun, ctx, dctx),
         _ => Err(QueryError::not_supported(&format!("Function: {:?}", fun)))
     }
 }
 
-fn eval_expr(expr: &Expr, ctx: Option<&ParsedData>) -> Result<ParsedValue, QueryError> {
+fn eval_expr(expr: &Expr, ctx: &StaticCtx, dctx: &mut LazyContext) -> Result<ParsedValue, QueryError> {
     match expr {
         Expr::Identifier(x) => {
             if x.quote_style.is_some() || ctx.is_none() {
                 Ok(ParsedValue::StrVal(Rc::new(x.value.clone())))
             } else {
-                if let Some(val) = ctx.unwrap().get_value(&x.value) {
+                if let Some(lazyv) = dctx.get_value(&x.value, ctx)? {
+                    Ok(lazyv)
+                } else if let Some(val) = ctx.get_value(&x.value) {
                     Ok(val.clone())
                 } else {
                     Ok(ParsedValue::NullVal)
@@ -170,11 +250,11 @@ fn eval_expr(expr: &Expr, ctx: Option<&ParsedData>) -> Result<ParsedValue, Query
         }
         Expr::CompoundIdentifier(_) => Err(QueryError::not_impl("Expr::CompoundIdentifier")),
         Expr::IsNull(x) => {
-            let res = eval_expr(x, ctx)?;
+            let res = eval_expr(x, ctx, dctx)?;
             Ok(ParsedValue::BoolVal(res == ParsedValue::NullVal))
         }
         Expr::IsNotNull(x) => {
-            let res = eval_expr(x, ctx)?;
+            let res = eval_expr(x, ctx, dctx)?;
             Ok(ParsedValue::BoolVal(res != ParsedValue::NullVal))
         }
         Expr::IsDistinctFrom(_, _) => Err(QueryError::not_impl("Expr::IsDistinctFrom")),
@@ -184,13 +264,13 @@ fn eval_expr(expr: &Expr, ctx: Option<&ParsedData>) -> Result<ParsedValue, Query
         Expr::InUnnest { .. } => Err(QueryError::not_impl("Expr::InUnnest")),
         Expr::Between { .. } => Err(QueryError::not_impl("Expr::Between")),
         Expr::BinaryOp { left, op, right } => {
-            let lval = eval_expr(left, ctx)?;
-            let rval = || { // using a closure for lazy evaluation
-                let rv = eval_expr(right, ctx)?;
+            let lval = eval_expr(left, ctx, dctx)?;
+            let mut rval = || { // using a closure for lazy evaluation
+                let rv = eval_expr(right, ctx, dctx)?;
                 Ok(rv)
             };
             // another closure for lazy eval
-            let arithmetic_op = |op: &BinaryOperator| {
+            let mut arithmetic_op = |op: &BinaryOperator| {
                 let rvalv: ParsedValue = rval()?;
                 match (&lval, &rvalv) {
                     (ParsedValue::LongVal(lv), ParsedValue::LongVal(rv)) =>  {
@@ -256,7 +336,7 @@ fn eval_expr(expr: &Expr, ctx: Option<&ParsedData>) -> Result<ParsedValue, Query
             }
         }
         Expr::UnaryOp { op, expr } => {
-            let val = eval_expr(expr, ctx)?;
+            let val = eval_expr(expr, ctx, dctx)?;
             match op {
                 UnaryOperator::Plus => Err(QueryError::not_impl("UnaryOperator::Plus")),
                 UnaryOperator::Minus => Err(QueryError::not_impl("UnaryOperator::Minus")),
@@ -316,7 +396,7 @@ fn eval_expr(expr: &Expr, ctx: Option<&ParsedData>) -> Result<ParsedValue, Query
         Expr::TypedString { .. } => Err(QueryError::not_impl("Expr::TypedString")),
         Expr::MapAccess { .. } => Err(QueryError::not_impl("Expr::MapAccess")),
         Expr::Function(f) => {
-            eval_function(f, ctx)
+            eval_function(f, ctx, dctx)
         },
         Expr::Case { .. } => Err(QueryError::not_impl("Expr::Case")),
         Expr::Exists(_) => Err(QueryError::not_impl("Expr::Exists")),
@@ -331,8 +411,8 @@ fn eval_expr(expr: &Expr, ctx: Option<&ParsedData>) -> Result<ParsedValue, Query
     }
 }
 
-fn eval_integer_expr(expr: &Expr, ctx: Option<&ParsedData>, name: &str) -> Result<i64,QueryError> {
-  match eval_expr(expr, ctx)? {
+fn eval_integer_expr(expr: &Expr, ctx: &StaticCtx, dctx: &mut LazyContext, name: &str) -> Result<i64,QueryError> {
+  match eval_expr(expr, ctx, dctx)? {
       ParsedValue::LongVal(x) => Ok(x),
       x => Err(QueryError::new(&format!(
           "Expression did not evauluate to an integer number ({}): {:?} , expr: {:?}", name, x, expr
@@ -351,34 +431,65 @@ pub fn process_query_one_shot(
         .selection
         .as_ref()
         .ok_or(QueryError::new("missing where clause"))?;
+    let mut empty_lazy_context = LazyContext::empty();
     let limit = if qry.get_limit().is_some() {
-        let num = eval_integer_expr(qry.get_limit().unwrap(), None, "limit")?;
+        let num = eval_integer_expr(qry.get_limit().unwrap(), &EMPTY_CTX,
+                                    &mut empty_lazy_context, "limit")?;
         Some(num as usize)
     } else { None };
     let mut offset = if qry.get_offset().is_some() {
-        let num = eval_integer_expr(qry.get_offset().unwrap(), None, "offset")?;
+        let num = eval_integer_expr(qry.get_offset().unwrap(), &EMPTY_CTX,
+                                    &mut empty_lazy_context, "offset")?;
         num
     } else { 0 };
     //let ord = qry.get_order_by();
     //println!("DEBUG QRY: {:?}", &wh);
+
+    let selection: &Vec<SelectItem> = &qry.get_select().projection;
+    let res_cols: Vec<(Rc<str>, LazyExpr)> = selection.iter().enumerate().flat_map(|(i, x)|{
+        match x {
+            SelectItem::UnnamedExpr(expr) => {
+                let my_name = i.to_string();
+                vec![(
+                    Rc::from(my_name.as_str()),
+                    LazyExpr::new(expr)
+                    )]
+            }
+            SelectItem::ExprWithAlias { expr, alias } => {
+                vec![(
+                    Rc::from(alias.value.as_str()),
+                    LazyExpr::new(expr)
+                )]
+            }
+            SelectItem::QualifiedWildcard(wc) => {
+                vec![(
+                    Rc::from( object_name_to_string(wc).as_str()),
+                    LazyExpr::err(QueryError::not_supported("SelectItem::QualifiedWildcard"))
+                )]
+            }
+            SelectItem::Wildcard => {
+                let vec = schema.columns().iter().map(|cd| {
+                    let col_name = cd.col_name().as_str();
+                    (
+                        Rc::from(col_name),
+                        LazyExpr::new(&Expr::Identifier(Ident::new(col_name)))
+                        )
+                }).collect::<Vec<_>>();
+                vec
+            }
+        }
+    }).collect::<Vec<_>>();
+
     for pm in input {
-        // let selection: Vec<SelectItem> = qry.get_select().projection;
-        // let res_cols = selection.iter().flat_map(|x|{
-        //     match x {
-        //         SelectItem::UnnamedExpr(ex) => {
-        //             let res = eval_expr(ex, Some(pm.get_parsed()))?;
-        //             [res.to_rc_str()]
-        //         }
-        //         SelectItem::ExprWithAlias { expr, alias } => {
-        //             []
-        //         }
-        //         SelectItem::QualifiedWildcard(_) => {}
-        //         SelectItem::Wildcard => {
-        //
-        //         }
-        //     }
-        // }).collect::<Vec<_>>();
-        let result = eval_expr(wh, Some(pm.get_parsed()))?;
+        let static_ctx = StaticCtx {
+            pd: Some(pm.get_parsed()),
+        };
+        let mut dctx = LazyContext {
+            hm: res_cols.iter().map(|(k,v)| {
+                (k.clone(), v.clone())
+            }).collect()
+        };
+        let result = eval_expr(wh, &static_ctx, &mut dctx)?;
         //println!("DEBUG EVAL RESULT: {:?} {:?}", &result, pm.get_parsed());
         if result.as_bool().unwrap_or(false) {
             if offset <= 0 {
@@ -414,7 +525,7 @@ mod test {
     use sqlparser::ast::Value::*;
     use sqlparser::ast::{Ident, BinaryOperator::*};
     use crate::{ParsedData, ParsedValue};
-    use crate::query_processor::eval_expr;
+    use crate::query_processor::{eval_expr, LazyContext, StaticCtx};
 
     #[test]
     fn test_eval_expr() {
@@ -434,11 +545,11 @@ mod test {
         );
         let hm = HashMap::from(
             [
-                (Rc::new("a".to_string()), ParsedValue::LongVal(150)),
-                 (Rc::new("b".to_string()), ParsedValue::LongVal(50)),
+                (Rc::from("a"), ParsedValue::LongVal(150)),
+                 (Rc::from("b"), ParsedValue::LongVal(50)),
             ]);
         let pd1 = ParsedData::new(hm);
-        let ret = eval_expr(&expr,Some(&pd1)).unwrap();
+        let ret = eval_expr(&expr,&StaticCtx{ pd: Some(&pd1) }, &mut LazyContext::empty()).unwrap();
         println!("RESULT: {:?}", ret);
     }
 }

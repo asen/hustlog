@@ -1,6 +1,6 @@
 use std::error::Error;
 use std::fmt;
-use sqlparser::ast::{Query, Statement, SetExpr, Select, Expr, OrderByExpr};
+use sqlparser::ast::{Query, Statement, SetExpr, Select, Expr};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserError};
 

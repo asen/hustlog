@@ -351,14 +351,14 @@ pub fn str2type(s: &str) -> Option<ParsedValueType> {
 }
 
 #[derive(Debug)]
-pub struct ParsedData(HashMap<Rc<String>, ParsedValue>);
+pub struct ParsedData(HashMap<Rc<str>, ParsedValue>);
 
 impl ParsedData {
-    pub fn new(hm: HashMap<Rc<String>, ParsedValue>) -> ParsedData {
+    pub fn new(hm: HashMap<Rc<str>, ParsedValue>) -> ParsedData {
         ParsedData(hm)
     }
 
-    pub fn get_value(&self, key: &String) -> Option<&ParsedValue> {
+    pub fn get_value(&self, key: &str) -> Option<&ParsedValue> {
         self.0.get(key)
     }
 }
