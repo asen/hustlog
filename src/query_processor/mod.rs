@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
-use std::ops::{Add, Div, Mul, Rem, Sub};
+use std::ops::{Add, Deref, Div, Mul, Rem, Sub};
 use std::rc::Rc;
 
 use sqlparser::ast::{
@@ -51,8 +51,25 @@ impl fmt::Display for QueryError {
 
 impl Error for QueryError {}
 
+pub struct ResultRow {
+    msg: ParsedMessage,
+    computed: Vec<(Rc<str>, ParsedValue)>,
+}
+
+impl ResultRow {
+    pub fn get_raw(&self) -> &RawMessage {
+        self.msg.get_raw()
+    }
+    // pub fn get_parsed(&self) -> &ParsedData {
+    //     self.msg.get_parsed()
+    // }
+    pub fn get_computed(&self) -> &Vec<(Rc<str>, ParsedValue)> {
+        &self.computed
+    }
+}
+
 pub struct ResultTable {
-    rows: Vec<ParsedMessage>,
+    rows: Vec<ResultRow>,
 }
 
 impl ResultTable {
@@ -64,11 +81,11 @@ impl ResultTable {
     //     self.add_row(ResultRow::new(cols));
     // }
 
-    pub fn add_row(&mut self, row: ParsedMessage) -> () {
-        self.rows.push(row);
+    pub fn add_row(&mut self, msg: ParsedMessage, computed: Vec<(Rc<str>, ParsedValue)>) -> () {
+        self.rows.push(ResultRow { msg, computed });
     }
 
-    pub fn get_rows(&self) -> &Vec<ParsedMessage> {
+    pub fn get_rows(&self) -> &Vec<ResultRow> {
         &self.rows
     }
 
@@ -541,17 +558,23 @@ pub fn process_query_one_shot(
         let static_ctx = StaticCtx {
             pd: Some(pm.get_parsed()),
         };
-        let mut dctx = LazyContext {
-            hm: res_cols
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
-        };
-        let result = eval_expr(wh, &static_ctx, &mut dctx)?;
+        let mut hm = HashMap::new();
+        for (k, v) in &res_cols {
+            hm.insert(k.clone(), v.clone());
+        }
+        let mut dctx = LazyContext { hm: hm };
+        let where_result = eval_expr(wh, &static_ctx, &mut dctx)?;
         //println!("DEBUG EVAL RESULT: {:?} {:?}", &result, pm.get_parsed());
-        if result.as_bool().unwrap_or(false) {
+        if where_result.as_bool().unwrap_or(false) {
             if offset <= 0 {
-                ret.add_row(pm);
+                let mut computed = Vec::new();
+                for (nm, _) in &res_cols {
+                    let pv = dctx
+                        .get_value(nm.deref(), &static_ctx)?
+                        .unwrap_or(ParsedValue::NullVal);
+                    computed.push((nm.clone(), pv))
+                }
+                ret.add_row(pm, computed);
                 if let Some(lmt) = limit {
                     if ret.get_rows().len() >= lmt {
                         break;

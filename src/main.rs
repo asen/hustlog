@@ -78,25 +78,22 @@ fn main_test(
 }
 
 fn print_result_table(
-    schema: &GrokSchema,
     rt: &ResultTable,
     out: &mut Box<dyn Write>,
     sep: &str,
 ) -> Result<(), Box<dyn Error>> {
-    for r in rt.get_rows() {
-        let pd = r.get_parsed();
-
-        let sv = schema
-            .columns()
-            .iter()
-            .map(|cd| {
-                pd.get_value(cd.col_name())
-                    .unwrap_or(&ParsedValue::NullVal)
-                    .to_rc_str()
-            })
-            .collect::<Vec<_>>();
-        let s = sv.iter().map(|x| x.as_str()).collect::<Vec<_>>().join(sep);
-        out.write(s.as_bytes())?;
+    for (i, r) in rt.get_rows().iter().enumerate() {
+        let istr = format!("({}) ", i);
+        out.write(istr.as_bytes())?;
+        out.write("COMPUTED:".as_bytes())?;
+        for (cn, cv) in r.get_computed() {
+            out.write(sep.as_bytes())?;
+            out.write(cn.as_bytes())?;
+            out.write("=".as_bytes())?;
+            out.write(cv.to_rc_str().as_bytes())?;
+        }
+        out.write("\nRAW: ".as_bytes())?;
+        out.write(r.get_raw().as_str().as_bytes())?;
         out.write("\n".as_bytes())?;
     }
     Ok(())
@@ -125,7 +122,7 @@ fn main_sql(
         eror_processor,
     );
     let res = process_query_one_shot(schema, &qry, pit)?;
-    print_result_table(schema, &res, &mut Box::new(outp), ",")
+    print_result_table(&res, &mut Box::new(outp), ", ")
 }
 
 fn main_print_default_patterns(mut outp: Box<dyn Write>) -> Result<(), Box<dyn Error>> {
