@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
+use std::io::{BufRead, Write};
 use std::ops::{Add, Deref, Div, Mul, Rem, Sub};
 use std::rc::Rc;
 
@@ -8,6 +9,7 @@ use sqlparser::ast::{
     BinaryOperator, Expr, Function, FunctionArg, FunctionArgExpr, Ident, ObjectName, SelectItem,
     UnaryOperator, Value,
 };
+
 
 use crate::parser::*;
 use crate::query::*;
@@ -170,14 +172,27 @@ impl LazyContext {
 
 fn eval_aritmethic_op<T>(lval: T, rval: T, op: &BinaryOperator) -> Result<T, QueryError>
 where
-    T: Add<Output = T> + Mul<Output = T> + Sub<Output = T> + Div<Output = T> + Rem<Output = T>,
+    T: Add<Output = T> + Mul<Output = T> + Sub<Output = T> + Div<Output = T> +
+    Rem<Output = T> + std::cmp::PartialEq + std::default::Default,
 {
     match op {
         BinaryOperator::Plus => Ok(lval + rval),
         BinaryOperator::Minus => Ok(lval - rval),
         BinaryOperator::Multiply => Ok(lval * rval),
-        BinaryOperator::Divide => Ok(lval / rval),
-        BinaryOperator::Modulo => Ok(lval % rval),
+        BinaryOperator::Divide => {
+            if rval == Default::default() {
+                Err(QueryError::new("Attempt to divide by zero"))
+            } else {
+                Ok(lval / rval)
+            }
+        },
+        BinaryOperator::Modulo => {
+            if rval == Default::default() {
+                Err(QueryError::new("Attempt to extract mod from dividing by zero"))
+            } else {
+                Ok(lval % rval)
+            }
+        },
         // BinaryOperator::BitwiseOr => {}
         // BinaryOperator::BitwiseAnd => {}
         // BinaryOperator::BitwiseXor => {}
@@ -414,7 +429,9 @@ fn eval_expr(
         Expr::Substring { .. } => Err(QueryError::not_impl("Expr::Substring")),
         Expr::Trim { .. } => Err(QueryError::not_impl("Expr::Trim")),
         Expr::Collate { .. } => Err(QueryError::not_impl("Expr::Collate")),
-        Expr::Nested(_) => Err(QueryError::not_impl("Expr::Nested")),
+        Expr::Nested(be) => {
+            eval_expr(be, ctx, dctx)
+        },
         Expr::Value(v) => {
             match v {
                 Value::Number(x, _) => {
@@ -488,11 +505,12 @@ pub fn process_query_one_shot(
     input: impl Iterator<Item = ParsedMessage>,
 ) -> Result<ResultTable, QueryError> {
     let mut ret = ResultTable::new();
+    let true_expr = Expr::Value(Value::Boolean(true));
     let wh: &Expr = qry
         .get_select()
         .selection
         .as_ref()
-        .ok_or(QueryError::new("missing where clause"))?;
+        .unwrap_or(&true_expr);
     let mut empty_lazy_context = LazyContext::empty();
     let limit = if qry.get_limit().is_some() {
         let num = eval_integer_expr(
@@ -598,17 +616,53 @@ pub fn process_query_one_shot(
 //     Err(QueryError::not_impl("process_query"))
 // }
 
+pub fn process_sql_one_shot(
+    rdr: Box<dyn BufRead>,
+    schema: &GrokSchema,
+    use_line_merger: bool,
+    query: &str,
+    log: Box<dyn Write>,
+) -> Result<ResultTable, Box<dyn Error>> {
+    let qry = SqlSelectQuery::new(query)?;
+    let parser = GrokParser::new(schema.clone())?;
+    let line_merger: Option<Box<dyn LineMerger>> = if use_line_merger {
+        Some(Box::new(SpaceLineMerger::new()))
+    } else {
+        None
+    };
+    let eror_processor = ParseErrorProcessor::new(log);
+    let pit = ParserIterator::new(
+        Box::new(parser),
+        line_merger,
+        Box::new(rdr.lines().into_iter()),
+        eror_processor,
+    );
+    let res = process_query_one_shot(schema, &qry, pit);
+    match res {
+        Ok(r) => Ok(r),
+        Err(e) => Err(Box::new(e)),
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::collections::HashMap;
+    use std::error::Error;
+    use std::io::{BufRead, BufReader, BufWriter, Write};
     use std::rc::Rc;
 
     use sqlparser::ast::Expr::*;
     use sqlparser::ast::Value::*;
     use sqlparser::ast::{BinaryOperator::*, Ident};
 
+    use crate::parser::test_syslog_schema;
     use crate::query_processor::{eval_expr, LazyContext, StaticCtx};
-    use crate::{ParsedData, ParsedValue};
+    use crate::{ParsedData, ParsedValue, ResultTable};
+    use super::process_sql_one_shot;
+
+    fn get_logger() -> Box<dyn Write> {
+        Box::new(BufWriter::new(std::io::stderr()))
+    }
 
     #[test]
     fn test_eval_expr() {
@@ -647,4 +701,86 @@ mod test {
         .unwrap();
         println!("RESULT: {:?}", ret);
     }
+
+    fn test_query(query: &str, input: &'static str) -> Result<ResultTable,Box<dyn Error>> {
+        let schema = test_syslog_schema();
+        let log = get_logger();
+        let rdr: Box<dyn BufRead> = Box::new(BufReader::new(input.as_bytes()));
+        let rrt = process_sql_one_shot(rdr, &schema, false, query, log);
+        match &rrt {
+            Ok(rt) => {
+                for r in rt.get_rows() {
+                    println!("COMPUTED: {:?}", r.get_computed())
+                };
+            }
+            Err(err) => {
+                println!("ERROR: {:?}", err)
+            }
+        }
+        rrt
+    }
+
+
+    const LINES1: &str = "Apr 22 02:34:54 actek-mac login[49532]: USER_PROCESS: 49532 ttys000\n\
+        Apr 22 04:42:04 actek-mac syslogd[104]: ASL Sender Statistics\n\
+        Apr 22 04:43:04 actek-mac syslogd[104]: ASL Sender Statistics\n\
+        Apr 22 04:43:34 actek-mac syslogd[104]: ASL Sender Statistics\n\
+        Apr 22 04:48:50 actek-mac login[49532]: USER_PROCESS: 49532 ttys000\n\
+        ";
+
+    #[test]
+    fn test_process_sql_one_shot1() {
+        let query = "select * from SYSLOGLINE where \
+            message=\"ASL Sender Statistics\" and \
+            timestamp > DATE(\"%b %e %H:%M:%S\", \"Apr 22 03:00:00\") and \
+            timestamp < DATE(\"%b %e %H:%M:%S\", \"Apr 22 05:00:00\") \
+            limit 3 offset 1;";
+        let rt = test_query(query, LINES1).unwrap();
+        assert_eq!(rt.get_rows().len(),2)
+    }
+
+    #[test]
+    fn test_process_sql_one_shot2() {
+        let query = "select timestamp as ts, program as prog, 2+2 as four, 3/2.0 \
+            from SYSLOGLINE where \
+            message=\"ASL Sender Statistics\" and \
+            timestamp > DATE(\"%b %e %H:%M:%S\", \"Apr 22 03:00:00\") and \
+            timestamp < DATE(\"%b %e %H:%M:%S\", \"Apr 22 05:00:00\") \
+            limit 3 offset 1;";
+        let rt = test_query(query, LINES1).unwrap();
+        assert_eq!(rt.get_rows().len(),2)
+    }
+
+    #[test]
+    fn test_process_sql_one_shot3() {
+        let query = "select timestamp as ts, ((program || ':') || pid) as prog, \
+            from SYSLOGLINE where \
+            message=\"ASL Sender Statistics\" and \
+            timestamp > DATE(\"%b %e %H:%M:%S\", \"Apr 22 03:00:00\") and \
+            timestamp < DATE(\"%b %e %H:%M:%S\", \"Apr 22 05:00:00\") \
+            limit 3 offset 1;";
+        let rt = test_query(query, LINES1).unwrap();
+        assert_eq!(rt.get_rows().len(),2)
+    }
+
+    #[test]
+    fn test_process_sql_one_shot4() {
+        let query = "select timestamp, 2/0, \
+            from SYSLOGLINE where \
+            message=\"ASL Sender Statistics\" and \
+            timestamp > DATE(\"%b %e %H:%M:%S\", \"Apr 22 03:00:00\") and \
+            timestamp < DATE(\"%b %e %H:%M:%S\", \"Apr 22 05:00:00\") \
+            limit 3 offset 1;";
+        let rt = test_query(query, LINES1);
+        assert!(rt.is_err())
+    }
+
+    #[test]
+    fn test_process_sql_one_shot5() {
+        let query = "select timestamp as ts, ((program || ':') || pid) as prog, \
+            from SYSLOGLINE";
+        let rt = test_query(query, LINES1).unwrap();
+        assert!(rt.get_rows().len() >= 5)
+    }
+
 }

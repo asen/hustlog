@@ -10,8 +10,7 @@ use clap::Parser;
 use conf::*;
 use parser::*;
 
-use crate::query::SqlSelectQuery;
-use crate::query_processor::{process_query_one_shot, ResultTable};
+use crate::query_processor::{process_sql_one_shot, ResultTable};
 
 mod conf;
 mod parser;
@@ -107,21 +106,7 @@ fn main_sql(
     outp: Box<dyn Write>,
     log: Box<dyn Write>,
 ) -> Result<(), Box<dyn Error>> {
-    let qry = SqlSelectQuery::new(query)?;
-    let parser = GrokParser::new(schema.clone())?;
-    let line_merger: Option<Box<dyn LineMerger>> = if use_line_merger {
-        Some(Box::new(SpaceLineMerger::new()))
-    } else {
-        None
-    };
-    let eror_processor = ParseErrorProcessor::new(log);
-    let pit = ParserIterator::new(
-        Box::new(parser),
-        line_merger,
-        Box::new(rdr.lines().into_iter()),
-        eror_processor,
-    );
-    let res = process_query_one_shot(schema, &qry, pit)?;
+    let res = process_sql_one_shot(rdr, schema, use_line_merger, query, log)?;
     print_result_table(&res, &mut Box::new(outp), ", ")
 }
 

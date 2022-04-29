@@ -149,6 +149,49 @@ impl LogParser for GrokParser {
     }
 }
 
+
+#[cfg(test)]
+pub fn test_syslog_schema() -> GrokSchema {
+    GrokSchema {
+        pattern: String::from("SYSLOGLINE"),
+        load_default: true,
+        columns: vec![
+            GrokColumnDef::new(
+                Rc::new("timestamp".to_string()),
+                ParsedValueType::TimeType(TimeTypeFormat::new("%b %e %H:%M:%S")),
+                vec![Rc::new(String::from("timestamp"))],
+                true,
+            ),
+            GrokColumnDef {
+                col_name: Rc::new("message".to_string()),
+                col_type: ParsedValueType::StrType,
+                lookup_names: vec![Rc::new(String::from("message"))],
+                required: true,
+            },
+            GrokColumnDef {
+                col_name: Rc::new("logsource".to_string()),
+                col_type: ParsedValueType::StrType,
+                lookup_names: vec![Rc::new(String::from("logsource"))],
+                required: true,
+            },
+            GrokColumnDef {
+                col_name: Rc::new("program".to_string()),
+                col_type: ParsedValueType::StrType,
+                lookup_names: vec![Rc::new(String::from("program"))],
+                required: true,
+            },
+            GrokColumnDef {
+                col_name: Rc::new("pid".to_string()),
+                col_type: ParsedValueType::LongType,
+                lookup_names: vec![Rc::new(String::from("pid"))],
+                required: true,
+            },
+        ],
+        grok_with_alias_only: false,
+        extra_patterns: vec![],
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -198,26 +241,7 @@ mod tests {
 
     #[test]
     fn parse_partial_date_works() {
-        let schema = GrokSchema {
-            pattern: String::from("SYSLOGLINE"),
-            load_default: true,
-            columns: vec![
-                GrokColumnDef::new(
-                    Rc::new("timestamp".to_string()),
-                    ParsedValueType::TimeType(TimeTypeFormat::new("%b %e %H:%M:%S")),
-                    vec![Rc::new(String::from("timestamp"))],
-                    true,
-                ),
-                GrokColumnDef {
-                    col_name: Rc::new("message".to_string()),
-                    col_type: ParsedValueType::StrType,
-                    lookup_names: vec![Rc::new(String::from("message"))],
-                    required: true,
-                },
-            ],
-            grok_with_alias_only: false,
-            extra_patterns: vec![],
-        };
+        let schema = test_syslog_schema();
         let parser = GrokParser::new(schema).unwrap();
         let lines = vec![
             "Apr 22 02:34:54 actek-mac login[49532]: USER_PROCESS: 49532 ttys000",
