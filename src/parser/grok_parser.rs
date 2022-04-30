@@ -149,7 +149,6 @@ impl LogParser for GrokParser {
     }
 }
 
-
 #[cfg(test)]
 pub fn test_syslog_schema() -> GrokSchema {
     GrokSchema {

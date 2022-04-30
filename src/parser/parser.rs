@@ -4,6 +4,7 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
+use std::hash::{Hash, Hasher};
 use std::io;
 use std::io::Write;
 use std::rc::Rc;
@@ -63,6 +64,22 @@ pub enum ParsedValue {
     DoubleVal(f64),
     TimeVal(DateTime<FixedOffset>),
     StrVal(Rc<String>),
+}
+
+impl Eq for ParsedValue {}
+
+impl Hash for ParsedValue {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        if let ParsedValue::DoubleVal(d) = self {
+            if d.is_nan() {
+                f64::NAN.to_bits().hash(state)
+            } else {
+                d.to_bits().hash(state)
+            }
+        } else {
+            self.hash(state)
+        }
+    }
 }
 
 impl PartialEq for ParsedValue {
