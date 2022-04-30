@@ -10,7 +10,6 @@ use sqlparser::ast::{
     UnaryOperator, Value,
 };
 
-
 use crate::parser::*;
 use crate::query::*;
 
@@ -155,25 +154,40 @@ impl LazyContext {
     }
 
     fn get_value(&mut self, key: &str, ctx: &StaticCtx) -> Result<Option<ParsedValue>, QueryError> {
-        let lex_opt = self.hm.get_mut(key);
+        // XXX this is to make rust borrow checker happy -
+        // it is easier to temporarily remove the LazyExpr from the hash map
+        // so that it can be safely evaluated with the rest of the hash map as a lazy context
+        // of course this wouldn't be thread-safe if it ever has to be
+        let lex_opt = self.hm.remove(key);
         if lex_opt.is_none() {
             return Ok(None);
         }
-        let lex = lex_opt.unwrap();
+        let mut lex = lex_opt.unwrap();
         if lex.res.is_some() {
-            return lex.res.as_ref().unwrap().clone();
+            let ret = lex.res.as_ref().unwrap().clone();
+            self.hm.insert(Rc::from(key), lex);
+            return ret
         }
-        //TODO FIXME ??? cant't pass self as lazy context
-        let pv = eval_expr(&lex.expr, ctx, &mut LazyContext::empty())?;
-        lex.res = Some(Ok(Some(pv)));
-        return lex.res.as_ref().unwrap().clone();
+        let res = eval_expr(&lex.expr, ctx, self);
+        let ret = match res {
+            Ok(pv) => {Ok(Some(pv))}
+            Err(x) => { Err(x) }
+        };
+        lex.res = Some(ret.clone());
+        self.hm.insert(Rc::from(key), lex);
+        return ret
     }
 }
 
 fn eval_aritmethic_op<T>(lval: T, rval: T, op: &BinaryOperator) -> Result<T, QueryError>
 where
-    T: Add<Output = T> + Mul<Output = T> + Sub<Output = T> + Div<Output = T> +
-    Rem<Output = T> + std::cmp::PartialEq + std::default::Default,
+    T: Add<Output = T>
+        + Mul<Output = T>
+        + Sub<Output = T>
+        + Div<Output = T>
+        + Rem<Output = T>
+        + std::cmp::PartialEq
+        + std::default::Default,
 {
     match op {
         BinaryOperator::Plus => Ok(lval + rval),
@@ -185,14 +199,16 @@ where
             } else {
                 Ok(lval / rval)
             }
-        },
+        }
         BinaryOperator::Modulo => {
             if rval == Default::default() {
-                Err(QueryError::new("Attempt to extract mod from dividing by zero"))
+                Err(QueryError::new(
+                    "Attempt to extract mod from dividing by zero",
+                ))
             } else {
                 Ok(lval % rval)
             }
-        },
+        }
         // BinaryOperator::BitwiseOr => {}
         // BinaryOperator::BitwiseAnd => {}
         // BinaryOperator::BitwiseXor => {}
@@ -429,9 +445,7 @@ fn eval_expr(
         Expr::Substring { .. } => Err(QueryError::not_impl("Expr::Substring")),
         Expr::Trim { .. } => Err(QueryError::not_impl("Expr::Trim")),
         Expr::Collate { .. } => Err(QueryError::not_impl("Expr::Collate")),
-        Expr::Nested(be) => {
-            eval_expr(be, ctx, dctx)
-        },
+        Expr::Nested(be) => eval_expr(be, ctx, dctx),
         Expr::Value(v) => {
             match v {
                 Value::Number(x, _) => {
@@ -506,11 +520,7 @@ pub fn process_query_one_shot(
 ) -> Result<ResultTable, QueryError> {
     let mut ret = ResultTable::new();
     let true_expr = Expr::Value(Value::Boolean(true));
-    let wh: &Expr = qry
-        .get_select()
-        .selection
-        .as_ref()
-        .unwrap_or(&true_expr);
+    let wh: &Expr = qry.get_select().selection.as_ref().unwrap_or(&true_expr);
     let mut empty_lazy_context = LazyContext::empty();
     let limit = if qry.get_limit().is_some() {
         let num = eval_integer_expr(
@@ -655,10 +665,10 @@ mod test {
     use sqlparser::ast::Value::*;
     use sqlparser::ast::{BinaryOperator::*, Ident};
 
+    use super::process_sql_one_shot;
     use crate::parser::test_syslog_schema;
     use crate::query_processor::{eval_expr, LazyContext, StaticCtx};
     use crate::{ParsedData, ParsedValue, ResultTable};
-    use super::process_sql_one_shot;
 
     fn get_logger() -> Box<dyn Write> {
         Box::new(BufWriter::new(std::io::stderr()))
@@ -702,7 +712,7 @@ mod test {
         println!("RESULT: {:?}", ret);
     }
 
-    fn test_query(query: &str, input: &'static str) -> Result<ResultTable,Box<dyn Error>> {
+    fn test_query(query: &str, input: &'static str) -> Result<ResultTable, Box<dyn Error>> {
         let schema = test_syslog_schema();
         let log = get_logger();
         let rdr: Box<dyn BufRead> = Box::new(BufReader::new(input.as_bytes()));
@@ -711,7 +721,7 @@ mod test {
             Ok(rt) => {
                 for r in rt.get_rows() {
                     println!("COMPUTED: {:?}", r.get_computed())
-                };
+                }
             }
             Err(err) => {
                 println!("ERROR: {:?}", err)
@@ -719,7 +729,6 @@ mod test {
         }
         rrt
     }
-
 
     const LINES1: &str = "Apr 22 02:34:54 actek-mac login[49532]: USER_PROCESS: 49532 ttys000\n\
         Apr 22 04:42:04 actek-mac syslogd[104]: ASL Sender Statistics\n\
@@ -736,7 +745,7 @@ mod test {
             timestamp < DATE(\"%b %e %H:%M:%S\", \"Apr 22 05:00:00\") \
             limit 3 offset 1;";
         let rt = test_query(query, LINES1).unwrap();
-        assert_eq!(rt.get_rows().len(),2)
+        assert_eq!(rt.get_rows().len(), 2)
     }
 
     #[test]
@@ -748,24 +757,24 @@ mod test {
             timestamp < DATE(\"%b %e %H:%M:%S\", \"Apr 22 05:00:00\") \
             limit 3 offset 1;";
         let rt = test_query(query, LINES1).unwrap();
-        assert_eq!(rt.get_rows().len(),2)
+        assert_eq!(rt.get_rows().len(), 2)
     }
 
     #[test]
     fn test_process_sql_one_shot3() {
-        let query = "select timestamp as ts, ((program || ':') || pid) as prog, \
+        let query = "select timestamp as ts, ((program || ':') || pid) as prog \
             from SYSLOGLINE where \
             message=\"ASL Sender Statistics\" and \
             timestamp > DATE(\"%b %e %H:%M:%S\", \"Apr 22 03:00:00\") and \
             timestamp < DATE(\"%b %e %H:%M:%S\", \"Apr 22 05:00:00\") \
             limit 3 offset 1;";
         let rt = test_query(query, LINES1).unwrap();
-        assert_eq!(rt.get_rows().len(),2)
+        assert_eq!(rt.get_rows().len(), 2)
     }
 
     #[test]
-    fn test_process_sql_one_shot4() {
-        let query = "select timestamp, 2/0, \
+    fn test_process_sql_one_shot4_div_by_zero() {
+        let query = "select timestamp, 2/0 \
             from SYSLOGLINE where \
             message=\"ASL Sender Statistics\" and \
             timestamp > DATE(\"%b %e %H:%M:%S\", \"Apr 22 03:00:00\") and \
@@ -777,10 +786,9 @@ mod test {
 
     #[test]
     fn test_process_sql_one_shot5() {
-        let query = "select timestamp as ts, ((program || ':') || pid) as prog, \
+        let query = "select timestamp as ts, ((program || ':') || pid) as prog \
             from SYSLOGLINE";
         let rt = test_query(query, LINES1).unwrap();
         assert!(rt.get_rows().len() >= 5)
     }
-
 }
