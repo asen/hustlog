@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::fmt;
 
-use sqlparser::ast::{Expr, Query, Select, SetExpr, Statement};
+use sqlparser::ast::{Expr, OrderByExpr, Query, Select, SetExpr, Statement};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserError};
 
@@ -55,9 +55,9 @@ impl SqlSelectQuery {
         }
     }
 
-    // pub fn get_order_by(&self) -> &Vec<OrderByExpr> {
-    //     &self.ast_query.order_by
-    // }
+    pub fn get_order_by(&self) -> &Vec<OrderByExpr> {
+        &self.ast_query.order_by
+    }
 }
 
 impl SqlSelectQuery {

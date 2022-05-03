@@ -70,14 +70,29 @@ impl Eq for ParsedValue {}
 
 impl Hash for ParsedValue {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        if let ParsedValue::DoubleVal(d) = self {
-            if d.is_nan() {
-                f64::NAN.to_bits().hash(state)
-            } else {
-                d.to_bits().hash(state)
+        match self {
+            ParsedValue::NullVal => {
+                ParsedValue::NullVal.hash(state)
             }
-        } else {
-            self.hash(state)
+            ParsedValue::BoolVal(b) => {
+                b.hash(state)
+            }
+            ParsedValue::LongVal(n) => {
+                n.hash(state)
+            }
+            ParsedValue::DoubleVal(d) => {
+                if d.is_nan() {
+                    f64::NAN.to_bits().hash(state)
+                } else {
+                    d.to_bits().hash(state)
+                }
+            }
+            ParsedValue::TimeVal(t) => {
+                t.hash(state)
+            }
+            ParsedValue::StrVal(s) => {
+                s.hash(state)
+            }
         }
     }
 }

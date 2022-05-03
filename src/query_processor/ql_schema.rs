@@ -81,7 +81,7 @@ impl QlSchema {
 
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct QlRow {
     raw: Option<RawMessage>,
     data: Vec<(Rc<str>, ParsedValue)>

@@ -1,4 +1,6 @@
-use std::collections::{HashMap, VecDeque};
+use std::cmp::{min, Ordering};
+use std::collections::{HashMap};
+use std::collections::hash_map::Entry;
 use std::error::Error;
 use std::io::{BufRead, Write};
 use std::rc::Rc;
@@ -17,13 +19,19 @@ pub trait QlInputTable {
 pub trait QlOutputTable {
     fn write_row(&mut self, row: QlRow) -> Result<(),Box<dyn Error>>;
     fn num_written(&self) -> usize;
+    fn ordered_slice(&mut self,
+                     limit: Option<usize>,
+                     offset: i64,
+                     order_by_exprs: &Vec<(usize,bool)>,
+    ) -> Box<&dyn QlInputTable> ;
 }
 
 
 pub struct QlMemTable {
     //schema: QlSchema,
-    buf: VecDeque<QlRow>,
+    buf: Vec<QlRow>,
     written: usize,
+    read: usize,
 }
 
 impl QlMemTable {
@@ -32,12 +40,14 @@ impl QlMemTable {
     ) -> Self {
         Self {
             //schema: schema.clone(),
-            buf: VecDeque::new(),
+            buf: Vec::new(),
             written: 0,
+            read: 0,
         }
     }
 
-    pub fn get_rows(&self) -> &VecDeque<QlRow> {
+    #[cfg(test)]
+    pub fn get_rows(&self) -> &Vec<QlRow> {
         &self.buf
     }
 
@@ -48,7 +58,7 @@ impl QlMemTable {
 
 impl QlOutputTable for QlMemTable {
     fn write_row(&mut self, row: QlRow) -> Result<(), Box<dyn Error>> {
-        self.buf.push_back(row);
+        self.buf.push(row);
         self.written += 1;
         Ok(())
     }
@@ -56,11 +66,73 @@ impl QlOutputTable for QlMemTable {
     fn num_written(&self) -> usize {
         self.written
     }
+
+    fn ordered_slice(&mut self,
+                     limit: Option<usize>,
+                     offset: i64,
+                     order_by_exprs: &Vec<(usize,bool)>,
+    ) -> Box<&dyn QlInputTable> {
+        let nval = ParsedValue::NullVal;
+        self.buf.sort_by(|x, y| {
+            let x_sk: Vec<(&ParsedValue, bool)> = order_by_exprs.iter().map(|(pos, asc)|{
+                let pv: &ParsedValue = x.data()
+                    .get(*pos)
+                    .map(|(_rc, v)| v)
+                    .unwrap_or(&nval);
+                (pv, *asc)
+            }).collect::<Vec<_>>();
+            let y_sk: Vec<(&ParsedValue, bool)> = order_by_exprs.iter().map(|(pos, asc)|{
+                let pv: &ParsedValue = y.data()
+                    .get(*pos)
+                    .map(|(_rc, v)| v)
+                    .unwrap_or(&nval);
+                (pv, *asc)
+            }).collect::<Vec<_>>();
+
+            let neq: Option<(&(&ParsedValue, bool), &(&ParsedValue, bool))> = x_sk.iter().zip(y_sk.iter()).find(|(&l, &r)|{
+                *l.0 != *r.0
+            });
+            if neq.is_none() {
+                Ordering::Equal
+            } else {
+                let ((l, ascl), (r, _ascr)) = neq.unwrap();
+                if *ascl {
+                    l.partial_cmp(&r).unwrap_or(Ordering::Less)
+                } else {
+                    //desc
+                    l.partial_cmp(&r).unwrap_or(Ordering::Less).reverse()
+                }
+            }
+        });
+
+        if offset > 0 {
+            let uoffset = offset as usize;
+            let to_drain = min(uoffset, self.buf.len());
+            self.buf.drain(0..to_drain);
+        }
+        if limit.is_some() {
+            let limit_u = limit.unwrap();
+            if limit_u < self.buf.len() {
+                self.buf.drain(limit.unwrap()..);
+            }
+        }
+        let sz = self.buf.len();
+        self.written = sz;
+        self.read = 0;
+        Box::new(self)
+    }
+
 }
 
 impl QlInputTable for QlMemTable {
     fn read_row(&mut self) -> Result<Option<QlRow>, Box<dyn Error>> {
-        Ok(self.buf.pop_front())
+        let ret = self.buf.get(self.read);
+        if ret.is_none() {
+            return Ok(None)
+        }
+        self.read += 1;
+        let ret: QlRow = ret.unwrap().clone();
+        Ok(Some(ret))
     }
 }
 
@@ -82,7 +154,7 @@ impl QlInputTable for QlParserIteratorInputTable<'_> {
     }
 }
 
-#[derive(Eq, Hash, PartialEq)]
+#[derive(Eq, Hash, PartialEq, Debug)]
 struct QlGroupByKey(Vec<(Rc<str>,ParsedValue)>);
 
 struct QlGroupByContext {
@@ -110,11 +182,20 @@ impl QlGroupByContext {
                    gb_ixes: &Vec<usize>
     ) -> Result<(), QueryError> {
         let gb_key_ref = Rc::new(gb_key);
-        if !&self.by_gb_key.contains_key(&gb_key_ref) {
-            let _ = &self.keys_ordered.push(gb_key_ref.clone());
-            let _ = &self.by_gb_key.insert(gb_key_ref.clone(), empty_agg_exprs);
+        let en = self.by_gb_key.entry(gb_key_ref.clone());
+        let mut exists = true;
+        let agg_exprs: &mut Vec<Box<dyn AggExpr>> = match en {
+            Entry::Occupied(e) => {
+                e.into_mut()
+            }
+            Entry::Vacant(e) => {
+                exists = false;
+                e.insert(empty_agg_exprs)
+            }
+        };
+        if !exists {
+            self.keys_ordered.push(gb_key_ref.clone());
         }
-        let agg_exprs: &mut Vec<Box<dyn AggExpr>> = self.by_gb_key.get_mut(&gb_key_ref).unwrap();
         for ae in agg_exprs.iter_mut() {
             ae.add_context(ctx, dctx, gb_ixes)?;
         }
@@ -122,8 +203,18 @@ impl QlGroupByContext {
     }
 
     fn output_to_table(&self, sel_cols: &QlSelectCols,
-                       outp: &mut Box<&mut dyn QlOutputTable>) -> Result<(), Box<dyn Error>> {
+                       outp: &mut Box<&mut dyn QlOutputTable>,
+                       limit: Option<usize>,
+                       offset: i64,
+                       order_by: &Vec<(usize,bool)>,
+    ) -> Result<(), Box<dyn Error>> {
+        let mut my_offset = offset;
+        let has_order_by = !order_by.is_empty();
         for gb_key_ref in &self.keys_ordered {
+            if !has_order_by && my_offset > 0 {
+                my_offset -=1;
+                continue;
+            }
             let agg_exprs = self.by_gb_key.get(gb_key_ref).unwrap();
             let mut outp_row = Vec::with_capacity(sel_cols.cols().len());
 
@@ -147,7 +238,11 @@ impl QlGroupByContext {
                 }
             };
             outp.write_row(QlRow::new(None, outp_row))?;
+            if !has_order_by && limit.is_some() && outp.num_written() >= limit.unwrap() {
+                break;
+            }
         }
+        outp.ordered_slice(limit, offset, order_by);
         Ok(())
     }
 }
@@ -200,6 +295,18 @@ fn get_offset(
     }
 }
 
+fn eval_lazy_ctxs(select_c: &QlSelectCols,
+                  static_ctx: &QlRowContext,
+                  lazy_ctx: &mut LazyContext) -> Result<Vec<(Rc<str>, ParsedValue)>, QueryError> {
+    let mut outp_vals: Vec<(Rc<str>, ParsedValue)> = Vec::new();
+    let lazy_exp_vec = select_c.lazy_exprs();
+    for le in lazy_exp_vec {
+        let pv = lazy_ctx
+            .get_value(le.name(), &static_ctx)?.unwrap_or(ParsedValue::NullVal);
+        outp_vals.push((le.name().clone(),pv));
+    }
+    Ok(outp_vals)
+}
 
 pub fn eval_query(
     select_c: &QlSelectCols,
@@ -207,10 +314,12 @@ pub fn eval_query(
     limit: Option<usize>,
     offset: i64,
     group_by_exprs: &Vec<usize>,
+    order_by_exprs: &Vec<(usize,bool)>,
     inp: &mut Box<&mut dyn QlInputTable>,
     outp: &mut Box<&mut dyn QlOutputTable>
 ) -> Result<(),Box<dyn Error>> {
     let has_agg = select_c.validate_group_by_cols(group_by_exprs)?;
+    let has_order_by = !order_by_exprs.is_empty();
     let needs_raw = select_c.has_raw_message();
     let mut gb_context = QlGroupByContext::new();
     let mut my_offset = offset;
@@ -223,13 +332,7 @@ pub fn eval_query(
         if where_result {
             //row matches
             // eval our lazy contexts
-            let mut outp_vals: Vec<(Rc<str>, ParsedValue)> = Vec::new();
-            let lazy_exp_vec = select_c.lazy_exprs();
-            for le in lazy_exp_vec {
-                let pv = lazy_ctx
-                    .get_value(le.name(), &static_ctx)?.unwrap_or(ParsedValue::NullVal);
-                outp_vals.push((le.name().clone(),pv));
-            }
+            let outp_vals = eval_lazy_ctxs(select_c, &static_ctx, &mut lazy_ctx)?;
             if has_agg {
                 // handle group by stuff
                 let agg_exprs = select_c.agg_exprs();
@@ -241,12 +344,13 @@ pub fn eval_query(
                 )?;
             } else {
                 //generate the output row
-                if my_offset > 0 {
+                // limit and offset can be applied only if there is no order by
+                if !has_order_by && my_offset > 0 {
                     my_offset -= 1
                 } else {
                     let orow = QlRow::new(raw, outp_vals);
                     outp.write_row(orow)?;
-                    if limit.is_some() && outp.num_written() >= limit.unwrap() {
+                    if !has_order_by && limit.is_some() && outp.num_written() >= limit.unwrap() {
                         break;
                     }
                 }
@@ -254,8 +358,11 @@ pub fn eval_query(
         }
     }
     if has_agg {
-        // TODO handle limit/offset
-        gb_context.output_to_table(&select_c, outp)?;
+        gb_context.output_to_table(&select_c, outp, limit, offset, order_by_exprs)?;
+    } else if has_order_by {
+        // TODO apply order
+        // then offset and limit
+        outp.ordered_slice(limit, offset, order_by_exprs);
     }
     Ok(())
 }
@@ -268,6 +375,7 @@ pub fn process_sql(
     query: &str,
     log: Box<dyn Write>,
 ) -> Result<Box<QlMemTable>, Box<dyn Error>> {
+    //println!("process_sql: {}", schema.columns().len());
     let qry = SqlSelectQuery::new(query)?;
     let parser = GrokParser::new(schema.clone())?;
     let line_merger: Option<Box<dyn LineMerger>> = if use_line_merger {
@@ -300,13 +408,33 @@ pub fn process_sql(
     let limit = get_limit(&qry, &mut empty_lazy_context)?;
     let offset = get_offset(&qry, &mut empty_lazy_context)?;
 
-    let group_by_exprs = Vec::new(); // TODO
+    //println!("process_sql: {}", select_c.cols().len());
+
+    let mut group_by_exprs = Vec::new(); // TODO
+    for (ix,gbe) in qry.get_select().group_by.iter().enumerate() {
+        let num = eval_integer_expr(gbe, &QlRowContext::empty(),
+                                    &mut empty_lazy_context, ix.to_string().as_str())?;
+        group_by_exprs.push(num as usize);
+    }
+    let mut order_by_exprs = Vec::new(); // TODO
+    for (ix,obe) in qry.get_order_by().iter().enumerate() {
+        let ex = &obe.expr;
+        if obe.nulls_first.is_some() {
+            return Err(Box::new(QueryError::not_supported(
+                "NULLS FIRST or NULLS LAST are not supported, nulls are always first for now")))
+        }
+        let num = eval_integer_expr(ex, &QlRowContext::empty(),
+                                    &mut empty_lazy_context, ix.to_string().as_str())?;
+        order_by_exprs.push((num as usize, obe.asc.unwrap_or(true)) );
+    }
+
     eval_query(
         &select_c,
         where_c,
         limit,
         offset,
         &group_by_exprs,
+        &order_by_exprs,
         &mut in_table_ref,
         &mut out_table_ref
     )?;
@@ -320,19 +448,11 @@ pub fn process_sql(
 
 #[cfg(test)]
 mod test {
-    // use std::collections::HashMap;
     use std::error::Error;
     use std::io::{BufRead, BufReader, BufWriter, Write};
-    // use std::rc::Rc;
-
-    // use sqlparser::ast::Expr::*;
-    // use sqlparser::ast::Value::*;
-    // use sqlparser::ast::{BinaryOperator::*, Ident};
 
     use crate::parser::test_syslog_schema;
     use crate::QlMemTable;
-    // use crate::query_processor::ql_schema::{QlRow, QlRowContext, QlSchema};
-    //use crate::ResultTable;
 
     use super::process_sql;
 
@@ -387,7 +507,7 @@ mod test {
         match &rrt {
             Ok(rt) => {
                 for r in rt.get_rows() {
-                    println!("COMPUTED: {:?}", r)
+                    println!("RESULT: {:?}", r)
                 }
             }
             Err(err) => {
@@ -459,11 +579,21 @@ mod test {
         assert!(rt.get_rows().len() >= 5)
     }
 
-    // #[test]
-    // fn test_process_sql_one_shot6() {
-    //     let query = "select count(*) \
-    //         from SYSLOGLINE";
-    //     let rt = test_query(query, LINES1).unwrap();
-    //     assert!(rt.get_rows().len() >= 5)
-    // }
+    #[test]
+    fn test_process_sql_one_shot6() {
+        let query = "select count(*) as cnt \
+            from SYSLOGLINE";
+        let rt = test_query(query, LINES1).unwrap();
+        assert!(rt.get_rows().len() == 1)
+    }
+
+    #[test]
+    fn test_process_sql_one_shot7() {
+        let query = "select program, count(*) as cnt \
+            from SYSLOGLINE group by 1";
+        // println!("test_process_sql_one_shot7: {:?}", ParsedValue::NullVal);
+
+        let rt = test_query(query, LINES1).unwrap();
+        assert!(rt.get_rows().len() == 2)
+    }
 }
