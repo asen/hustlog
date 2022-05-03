@@ -10,7 +10,7 @@ use clap::Parser;
 use conf::*;
 use parser::*;
 
-use crate::query_processor::{process_sql_one_shot, ResultTable};
+use crate::query_processor::{process_sql, QlMemTable, QlInputTable};
 
 mod conf;
 mod parser;
@@ -77,22 +77,27 @@ fn main_test(
 }
 
 fn print_result_table(
-    rt: &ResultTable,
+    rt: &mut QlMemTable,
     out: &mut Box<dyn Write>,
     sep: &str,
 ) -> Result<(), Box<dyn Error>> {
-    for (i, r) in rt.get_rows().iter().enumerate() {
+    let mut i = 0;
+    while let Some(r) = &rt.read_row()? {
+        i += 1;
         let istr = format!("({}) ", i);
         out.write(istr.as_bytes())?;
         out.write("COMPUTED:".as_bytes())?;
-        for (cn, cv) in r.get_computed() {
+        for (cn, cv) in r.data() {
             out.write(sep.as_bytes())?;
             out.write(cn.as_bytes())?;
             out.write("=".as_bytes())?;
             out.write(cv.to_rc_str().as_bytes())?;
         }
+
         out.write("\nRAW: ".as_bytes())?;
-        out.write(r.get_raw().as_str().as_bytes())?;
+        if r.raw().is_some(){
+            out.write(r.raw().as_ref().unwrap().as_str().as_bytes())?;
+        };
         out.write("\n".as_bytes())?;
     }
     Ok(())
@@ -106,8 +111,8 @@ fn main_sql(
     outp: Box<dyn Write>,
     log: Box<dyn Write>,
 ) -> Result<(), Box<dyn Error>> {
-    let res = process_sql_one_shot(rdr, schema, use_line_merger, query, log)?;
-    print_result_table(&res, &mut Box::new(outp), ", ")
+    let mut res = process_sql(rdr, schema, use_line_merger, query, log)?;
+    print_result_table(&mut res, &mut Box::new(outp), ", ")
 }
 
 fn main_print_default_patterns(mut outp: Box<dyn Write>) -> Result<(), Box<dyn Error>> {

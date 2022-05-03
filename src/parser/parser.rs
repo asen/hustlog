@@ -12,7 +12,7 @@ use std::rc::Rc;
 use chrono::Datelike;
 use chrono::{DateTime, FixedOffset, Local, NaiveDateTime, Offset, TimeZone};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RawMessage(String);
 
 impl RawMessage {
@@ -337,8 +337,8 @@ impl ParsedData {
 
 #[derive(Debug)]
 pub struct ParsedMessage {
-    raw: RawMessage,
-    parsed: ParsedData,
+    pub raw: RawMessage,
+    pub parsed: ParsedData,
 }
 
 impl ParsedMessage {

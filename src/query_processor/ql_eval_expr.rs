@@ -3,45 +3,54 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 use std::rc::Rc;
 
 use crate::query_processor::QueryError;
-use crate::{str2val, ParsedData, ParsedValue, ParsedValueType, TimeTypeFormat};
+use crate::{str2val, ParsedValue, ParsedValueType, TimeTypeFormat};
 use sqlparser::ast::{
     BinaryOperator, Expr, Function, FunctionArg, FunctionArgExpr, ObjectName, UnaryOperator, Value,
 };
+use crate::query_processor::ql_schema::QlRowContext;
 
-pub struct StaticCtx<'a> {
-    pub pd: Option<&'a ParsedData>,
-}
+// pub struct StaticCtx<'a> {
+//     pd: Option<&'a ParsedData>,
+// }
+//
+// pub const EMPTY_STATIC_CTX: StaticCtx = StaticCtx { pd: None };
+//
+// impl<'a> StaticCtx<'a> {
+//     pub fn new(pd: Option<&'a ParsedData>) -> Self {
+//         Self { pd }
+//     }
+//
+//     pub fn get_value(&self, key: &str) -> Option<ParsedValue> {
+//         match self.pd {
+//             Some(pdd) => pdd.get_value(key).map(|x| x.clone()),
+//             None => None,
+//         }
+//     }
+//
+//     pub fn is_none(&self) -> bool {
+//         self.pd.is_none()
+//     }
+// }
 
-pub const EMPTY_CTX: StaticCtx = StaticCtx { pd: None };
-
-impl StaticCtx<'_> {
-    pub fn get_value(&self, key: &str) -> Option<ParsedValue> {
-        match self.pd {
-            Some(pdd) => pdd.get_value(key).map(|x| x.clone()),
-            None => None,
-        }
-    }
-
-    pub fn is_none(&self) -> bool {
-        self.pd.is_none()
-    }
-}
-
+#[derive(PartialEq,Eq,Hash)]
 pub struct LazyExpr {
+    name: Rc<str>,
     expr: Expr,
     res: Option<Result<Option<ParsedValue>, QueryError>>,
 }
 
 impl LazyExpr {
-    pub fn new(expr: &Expr) -> LazyExpr {
+    pub fn new(name: Rc<str>, expr: &Expr) -> LazyExpr {
         Self {
+            name: name.clone(),
             expr: expr.clone(),
             res: None,
         }
     }
 
-    pub fn err(qerr: QueryError) -> LazyExpr {
+    pub fn err(name: Rc<str>, qerr: QueryError) -> LazyExpr {
         Self {
+            name: name.clone(),
             expr: Expr::Value(Value::Null),
             res: Some(Err(qerr)),
         }
@@ -49,9 +58,18 @@ impl LazyExpr {
 
     pub fn clone(&self) -> LazyExpr {
         Self {
+            name: self.name.clone(),
             expr: self.expr.clone(),
             res: self.res.clone(),
         }
+    }
+
+    pub fn expr(&self) -> &Expr {
+        &self.expr
+    }
+
+    pub fn name(&self) -> &Rc<str> {
+        &self.name
     }
 }
 
@@ -71,23 +89,23 @@ impl LazyContext {
     pub fn get_value(
         &mut self,
         key: &str,
-        ctx: &StaticCtx,
+        ctx: &QlRowContext,
     ) -> Result<Option<ParsedValue>, QueryError> {
+        let lex_opt = self.hm.get(key);
+        if lex_opt.is_none() {
+            return Ok(None);
+        }
+        let lex = lex_opt.unwrap();
+        if lex.res.is_some() {
+            let ret = lex.res.as_ref().unwrap().clone();
+            return ret;
+        }
         // XXX this is to make rust borrow checker happy -
         // it is easier to temporarily remove the LazyExpr from the hash map
         // so that it can be safely evaluated with the rest of the hash map as a lazy context
         // of course this wouldn't be thread-safe if it ever has to be
-        let lex_opt = self.hm.remove(key);
-        if lex_opt.is_none() {
-            return Ok(None);
-        }
-        let mut lex = lex_opt.unwrap();
-        if lex.res.is_some() {
-            let ret = lex.res.as_ref().unwrap().clone();
-            self.hm.insert(Rc::from(key), lex);
-            return ret;
-        }
-        let res = eval_expr(&lex.expr, ctx, self);
+        let mut lex = self.hm.remove(key).unwrap(); // we already know the key exists here
+        let res = eval_expr(lex.expr(), ctx, self);
         let ret = match res {
             Ok(pv) => Ok(Some(pv)),
             Err(x) => Err(x),
@@ -122,7 +140,7 @@ where
         BinaryOperator::Modulo => {
             if rval == Default::default() {
                 Err(QueryError::new(
-                    "Attempt to extract mod from dividing by zero",
+                    "Attempt to extract remainder from dividing by zero",
                 ))
             } else {
                 Ok(lval % rval)
@@ -147,7 +165,7 @@ pub fn object_name_to_string(onm: &ObjectName) -> String {
 
 fn func_arg_to_pv(
     arg: &FunctionArg,
-    ctx: &StaticCtx,
+    ctx: &QlRowContext,
     dctx: &mut LazyContext,
 ) -> Result<ParsedValue, QueryError> {
     match arg {
@@ -166,7 +184,7 @@ fn func_arg_to_pv(
 
 fn eval_function_date(
     fun: &Function,
-    ctx: &StaticCtx,
+    ctx: &QlRowContext,
     dctx: &mut LazyContext,
 ) -> Result<ParsedValue, QueryError> {
     let mut args_iter = fun.args.iter();
@@ -199,7 +217,7 @@ fn eval_function_date(
 
 fn eval_function(
     fun: &Function,
-    ctx: &StaticCtx,
+    ctx: &QlRowContext,
     dctx: &mut LazyContext,
 ) -> Result<ParsedValue, QueryError> {
     let fun_name = object_name_to_string(&fun.name);
@@ -211,12 +229,12 @@ fn eval_function(
 
 pub fn eval_expr(
     expr: &Expr,
-    ctx: &StaticCtx,
+    ctx: &QlRowContext,
     dctx: &mut LazyContext,
 ) -> Result<ParsedValue, QueryError> {
     match expr {
         Expr::Identifier(x) => {
-            if x.quote_style.is_some() || ctx.is_none() {
+            if x.quote_style.is_some() || ctx.is_empty() {
                 Ok(ParsedValue::StrVal(Rc::new(x.value.clone())))
             } else {
                 if let Some(lazyv) = dctx.get_value(&x.value, ctx)? {
@@ -414,5 +432,20 @@ pub fn eval_expr(
         Expr::Tuple(_) => Err(QueryError::not_impl("Expr::Tuple")),
         Expr::ArrayIndex { .. } => Err(QueryError::not_impl("Expr::ArrayIndex")),
         Expr::Array(_) => Err(QueryError::not_impl("Expr::Array")),
+    }
+}
+
+pub fn eval_integer_expr(
+    expr: &Expr,
+    ctx: &QlRowContext,
+    dctx: &mut LazyContext,
+    name: &str,
+) -> Result<i64, QueryError> {
+    match eval_expr(expr, ctx, dctx)? {
+        ParsedValue::LongVal(x) => Ok(x),
+        x => Err(QueryError::new(&format!(
+            "Expression did not evauluate to an integer number ({}): {:?} , expr: {:?}",
+            name, x, expr
+        ))),
     }
 }

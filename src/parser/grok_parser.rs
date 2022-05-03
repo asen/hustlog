@@ -52,6 +52,10 @@ impl GrokColumnDef {
     pub fn col_name(&self) -> &String {
         &self.col_name
     }
+
+    pub fn col_type(&self) -> &ParsedValueType {
+        &self.col_type
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -130,7 +134,7 @@ impl LogParser for GrokParser {
                 for lnm in &c.lookup_names {
                     let mm = m.get(lnm.as_str());
                     if mm.is_some() {
-                        let opv: Option<ParsedValue> = str2val(mm.unwrap(), &c.col_type);
+                        let opv: Option<ParsedValue> = str2val(mm.unwrap(), c.col_type());
                         if opv.is_some() {
                             hm.insert(Rc::from(lnm.as_str()), opv.unwrap());
                             found = true;
