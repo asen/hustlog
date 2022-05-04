@@ -646,4 +646,15 @@ mod test {
         let rt = test_query(query, LINES1).unwrap();
         assert!(rt.get_rows().len() == 2)
     }
+
+    #[test]
+    fn test_process_sql_one_shot12() {
+        let query = "select program, avg(pid) as avg, max(pid) as max, \
+            min(pid) as min, count() as cnt, count(distinct(pid)) as dcnt \
+            from SYSLOGLINE group by 1";
+        // println!("test_process_sql_one_shot7: {:?}", ParsedValue::NullVal);
+
+        let rt = test_query(query, LINES1).unwrap();
+        assert!(rt.get_rows().len() == 2)
+    }
 }
