@@ -202,7 +202,7 @@ impl QlSelectCols {
         if has_agg {
             for (i, c) in self.cols.iter().enumerate() {
                if let QlSelectItem::LazyExpr(_) = c {
-                   if !gbe_ixes_set.contains(&(i + 1)) {
+                   if !gbe_ixes_set.contains(&i) {
                        return Err(QueryError::new(
                            "All non-aggregate select expressions must be part of the GROUP BY "));
                    }

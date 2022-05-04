@@ -178,8 +178,7 @@ impl QlGroupByContext {
                    gb_key: QlGroupByKey,
                    empty_agg_exprs: Vec<Box<dyn AggExpr>>,
                    ctx: &QlRowContext,
-                   dctx: &mut LazyContext,
-                   gb_ixes: &Vec<usize>
+                   dctx: &mut LazyContext
     ) -> Result<(), QueryError> {
         let gb_key_ref = Rc::new(gb_key);
         let en = self.by_gb_key.entry(gb_key_ref.clone());
@@ -197,7 +196,7 @@ impl QlGroupByContext {
             self.keys_ordered.push(gb_key_ref.clone());
         }
         for ae in agg_exprs.iter_mut() {
-            ae.add_context(ctx, dctx, gb_ixes)?;
+            ae.add_context(ctx, dctx)?;
         }
         Ok(())
     }
@@ -233,7 +232,7 @@ impl QlGroupByContext {
                     QlSelectItem::AggExpr(_) => {
                         let ae = agg_exprs_iter.next().unwrap();
                         let pv = ae.eval()?;
-                        outp_row.push((ae.name(), pv))
+                        outp_row.push((ae.name().clone(), pv))
                     }
                 }
             };
@@ -339,8 +338,7 @@ pub fn eval_query(
                 gb_context.add_row(
                     QlGroupByKey(outp_vals), agg_exprs,
                     &static_ctx,
-                    &mut lazy_ctx,
-                    group_by_exprs
+                    &mut lazy_ctx
                 )?;
             } else {
                 //generate the output row
@@ -414,7 +412,12 @@ pub fn process_sql(
     for (ix,gbe) in qry.get_select().group_by.iter().enumerate() {
         let num = eval_integer_expr(gbe, &QlRowContext::empty(),
                                     &mut empty_lazy_context, ix.to_string().as_str())?;
-        group_by_exprs.push(num as usize);
+        if num > 0 {
+            group_by_exprs.push(num as usize - 1);
+        } else {
+            return Err(Box::new(QueryError::new(
+                "GROUP BY columns are 1-based column indexes")))
+        }
     }
     let mut order_by_exprs = Vec::new(); // TODO
     for (ix,obe) in qry.get_order_by().iter().enumerate() {
@@ -425,7 +428,13 @@ pub fn process_sql(
         }
         let num = eval_integer_expr(ex, &QlRowContext::empty(),
                                     &mut empty_lazy_context, ix.to_string().as_str())?;
-        order_by_exprs.push((num as usize, obe.asc.unwrap_or(true)) );
+        if num > 0 {
+            order_by_exprs.push((num as usize - 1, obe.asc.unwrap_or(true)) );
+        } else {
+            return Err(Box::new(QueryError::new(
+                "ORDER BY columns are 1-based column indexes")))
+        }
+
     }
 
     eval_query(
@@ -518,10 +527,10 @@ mod test {
     }
 
     const LINES1: &str = "Apr 22 02:34:54 actek-mac login[49532]: USER_PROCESS: 49532 ttys000\n\
-        Apr 22 04:42:04 actek-mac syslogd[104]: ASL Sender Statistics\n\
+        Apr 22 04:42:04 actek-mac syslogd[103]: ASL Sender Statistics\n\
         Apr 22 04:43:04 actek-mac syslogd[104]: ASL Sender Statistics\n\
         Apr 22 04:43:34 actek-mac syslogd[104]: ASL Sender Statistics\n\
-        Apr 22 04:48:50 actek-mac login[49532]: USER_PROCESS: 49532 ttys000\n\
+        Apr 22 04:48:50 actek-mac login[49531]: USER_PROCESS: 49532 ttys000\n\
         ";
 
     #[test]
@@ -590,6 +599,47 @@ mod test {
     #[test]
     fn test_process_sql_one_shot7() {
         let query = "select program, count(*) as cnt \
+            from SYSLOGLINE group by 1";
+        // println!("test_process_sql_one_shot7: {:?}", ParsedValue::NullVal);
+
+        let rt = test_query(query, LINES1).unwrap();
+        assert!(rt.get_rows().len() == 2)
+    }
+
+    #[test]
+    fn test_process_sql_one_shot8() {
+        let query = "select program, min(pid) as min_pid \
+            from SYSLOGLINE group by 1";
+        // println!("test_process_sql_one_shot7: {:?}", ParsedValue::NullVal);
+
+        let rt = test_query(query, LINES1).unwrap();
+        assert!(rt.get_rows().len() == 2)
+    }
+
+    #[test]
+    fn test_process_sql_one_shot9() {
+        let query = "select program, max(pid) as max_pid \
+            from SYSLOGLINE group by 1";
+        // println!("test_process_sql_one_shot7: {:?}", ParsedValue::NullVal);
+
+        let rt = test_query(query, LINES1).unwrap();
+        assert!(rt.get_rows().len() == 2)
+    }
+
+
+    #[test]
+    fn test_process_sql_one_shot10() {
+        let query = "select program, sum(pid) \
+            from SYSLOGLINE group by 1";
+        // println!("test_process_sql_one_shot7: {:?}", ParsedValue::NullVal);
+
+        let rt = test_query(query, LINES1).unwrap();
+        assert!(rt.get_rows().len() == 2)
+    }
+
+    #[test]
+    fn test_process_sql_one_shot11() {
+        let query = "select program, avg(pid) \
             from SYSLOGLINE group by 1";
         // println!("test_process_sql_one_shot7: {:?}", ParsedValue::NullVal);
 
