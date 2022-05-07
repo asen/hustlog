@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt;
 use std::rc::Rc;
-use crate::query::SqlSelectQuery;
+use crate::query_processor::SqlSelectQuery;
 
 
 #[derive(PartialEq,Eq,Hash,Debug,Clone)]

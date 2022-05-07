@@ -14,7 +14,6 @@ use crate::query_processor::{process_sql, QlMemTable, QlInputTable};
 
 mod conf;
 mod parser;
-mod query;
 mod query_processor;
 
 fn my_parse(

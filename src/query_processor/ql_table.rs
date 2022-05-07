@@ -6,7 +6,7 @@ use std::io::{BufRead, Write};
 use std::rc::Rc;
 use sqlparser::ast::{Expr, Value};
 use crate::{GrokParser, GrokSchema, LineMerger, ParsedValue, ParseErrorProcessor, ParserIterator, RawMessage, SpaceLineMerger};
-use crate::query::SqlSelectQuery;
+use crate::query_processor::SqlSelectQuery;
 use crate::query_processor::ql_agg_expr::AggExpr;
 use crate::query_processor::ql_eval_expr::{eval_expr, eval_integer_expr, LazyContext};
 use crate::query_processor::ql_schema::{get_res_cols, QlRow, QlRowContext, QlSchema, QlSelectCols, QlSelectItem};
