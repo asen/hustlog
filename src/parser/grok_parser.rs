@@ -4,30 +4,31 @@ extern crate grok;
 
 use std::collections::HashMap;
 use std::error::Error;
+use std::io::{BufRead, Write};
 use std::rc::Rc;
 
 use grok::{patterns, Grok, Pattern};
 
 use crate::parser::parser::*;
+use crate::parser::schema::{ParserColDef, ParserSchema};
 
 #[derive(Debug, Clone)]
 pub struct GrokColumnDef {
-    col_name: Rc<String>,
-    col_type: ParsedValueType,
+    pcd: ParserColDef,
     lookup_names: Vec<Rc<String>>,
     required: bool,
 }
 
 impl GrokColumnDef {
     pub fn new(
-        col_name: Rc<String>,
+        col_name: Rc<str>,
         col_type: ParsedValueType,
         lookup_names: Vec<Rc<String>>,
         required: bool,
     ) -> GrokColumnDef {
+        let pcd = ParserColDef::new(col_name.as_ref(), &col_type);
         Self {
-            col_name,
-            col_type,
+            pcd,
             lookup_names,
             required,
         }
@@ -42,19 +43,18 @@ impl GrokColumnDef {
 
     pub fn clone(&self) -> GrokColumnDef {
         GrokColumnDef {
-            col_name: self.col_name.clone(),
-            col_type: self.col_type.clone(),
+            pcd: self.pcd.clone(),
             lookup_names: self.lookup_names.iter().map(|s| s.clone()).collect(),
             required: self.required,
         }
     }
 
-    pub fn col_name(&self) -> &String {
-        &self.col_name
+    pub fn col_name(&self) -> &Rc<str> {
+        &self.pcd.name()
     }
 
     pub fn col_type(&self) -> &ParsedValueType {
-        &self.col_type
+        &self.pcd.pv_type()
     }
 }
 
@@ -86,6 +86,37 @@ impl GrokSchema {
 
     pub fn columns(&self) -> &Vec<GrokColumnDef> {
         &self.columns
+    }
+
+    pub fn create_parser_iterator(
+        &self,
+        rdr: Box<dyn BufRead>,
+        use_line_merger: bool,
+        log: Box<dyn Write>,
+    ) -> Result<ParserIterator, Box<dyn Error>> {
+        let parser = GrokParser::new(self.clone())?;
+        let line_merger: Option<Box<dyn LineMerger>> = if use_line_merger {
+            Some(Box::new(SpaceLineMerger::new()))
+        } else {
+            None
+        };
+        let eror_processor = ParseErrorProcessor::new(log);
+        Ok(ParserIterator::new(
+            Box::new(parser),
+            line_merger,
+            Box::new(rdr.lines().into_iter()),
+            eror_processor,
+        ))
+    }
+}
+
+impl ParserSchema for GrokSchema {
+    fn name(&self) -> &str {
+        &self.pattern
+    }
+
+    fn col_defs(&self) -> Vec<&ParserColDef> {
+        self.columns.iter().map(|x| &x.pcd).collect::<Vec<_>>()
     }
 }
 
@@ -160,35 +191,35 @@ pub fn test_syslog_schema() -> GrokSchema {
         load_default: true,
         columns: vec![
             GrokColumnDef::new(
-                Rc::new("timestamp".to_string()),
+                Rc::from("timestamp"),
                 ParsedValueType::TimeType(TimeTypeFormat::new("%b %e %H:%M:%S")),
                 vec![Rc::new(String::from("timestamp"))],
                 true,
             ),
-            GrokColumnDef {
-                col_name: Rc::new("message".to_string()),
-                col_type: ParsedValueType::StrType,
-                lookup_names: vec![Rc::new(String::from("message"))],
-                required: true,
-            },
-            GrokColumnDef {
-                col_name: Rc::new("logsource".to_string()),
-                col_type: ParsedValueType::StrType,
-                lookup_names: vec![Rc::new(String::from("logsource"))],
-                required: true,
-            },
-            GrokColumnDef {
-                col_name: Rc::new("program".to_string()),
-                col_type: ParsedValueType::StrType,
-                lookup_names: vec![Rc::new(String::from("program"))],
-                required: true,
-            },
-            GrokColumnDef {
-                col_name: Rc::new("pid".to_string()),
-                col_type: ParsedValueType::LongType,
-                lookup_names: vec![Rc::new(String::from("pid"))],
-                required: true,
-            },
+            GrokColumnDef::new(
+                Rc::from("message"),
+                ParsedValueType::StrType,
+                vec![Rc::new(String::from("message"))],
+                true
+            ),
+            GrokColumnDef::new(
+                Rc::from("logsource"),
+                ParsedValueType::StrType,
+                vec![Rc::new(String::from("logsource"))],
+                true
+            ),
+            GrokColumnDef::new(
+                Rc::from("program"),
+                ParsedValueType::StrType,
+                vec![Rc::new(String::from("program"))],
+                true
+            ),
+            GrokColumnDef::new(
+                Rc::from("pid"),
+                ParsedValueType::LongType,
+                vec![Rc::new(String::from("pid"))],
+                true
+            ),
         ],
         grok_with_alias_only: false,
         extra_patterns: vec![],
@@ -206,17 +237,17 @@ mod tests {
             load_default: false,
             columns: vec![
                 GrokColumnDef::new(
-                    Rc::new("logts".to_string()),
+                    Rc::from("logts"),
                     ParsedValueType::TimeType(TimeTypeFormat::new("%Y-%m-%dT%H:%M:%S.%3f%z")),
                     vec![Rc::new(String::from("logts"))],
                     true,
                 ),
-                GrokColumnDef {
-                    col_name: Rc::new("msg".to_string()),
-                    col_type: ParsedValueType::StrType,
-                    lookup_names: vec![Rc::new(String::from("msg"))],
-                    required: true,
-                },
+                GrokColumnDef::new(
+                    Rc::from("msg"),
+                    ParsedValueType::StrType,
+                    vec![Rc::new(String::from("msg"))],
+                    true,
+                ),
             ],
             grok_with_alias_only: false,
             extra_patterns: vec![

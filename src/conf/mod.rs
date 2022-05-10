@@ -40,6 +40,19 @@ pub struct MyArgs {
     #[clap(short, long)]
     output: Option<String>,
 
+    ///Output format. One of:
+    ///     sql
+    #[clap(short = 'f', long)]
+    output_format: Option<String>,
+
+    // INSERT batch size when generating SQL
+    #[clap(short = 'b', long, default_value="1000")]
+    output_batch_size: usize,
+
+    ///Add a create table statement before the inserts
+    #[clap(long)]
+    output_add_ddl: bool,
+
     /// TODO
     #[clap(short, long)]
     conf: Option<String>,
@@ -76,9 +89,13 @@ pub struct MyArgs {
     grok_schema_column: Vec<String>,
 
     /// Whether to merge lines starting with whitespace with the previous ones
-    /// My have small performance impact.
     #[clap(short, long)]
     merge_multi_line: bool,
+}
+
+pub enum OutputFormat {
+    DEFAULT,
+    SQL,
 }
 
 impl MyArgs {
@@ -109,7 +126,7 @@ impl MyArgs {
                     } else {
                         let col_name = lookup_names.first().unwrap().clone();
                         Ok(GrokColumnDef::new(
-                            col_name,
+                            Rc::from(col_name.as_str()),
                             col_type.unwrap(),
                             lookup_names,
                             required,
@@ -194,6 +211,25 @@ impl MyArgs {
 
     pub fn query(&self) -> &Option<String> {
         &self.query
+    }
+
+    pub fn output_format(&self) -> Option<OutputFormat> {
+        match &self.output_format {
+            None => None,
+            Some(of) => match of.to_ascii_lowercase().as_str() {
+                "sql" => Some(OutputFormat::SQL),
+                "default" => Some(OutputFormat::DEFAULT),
+                _ => None,
+            },
+        }
+    }
+
+    pub fn output_add_ddl(&self) -> bool {
+        self.output_add_ddl
+    }
+
+    pub fn output_batch_size(&self) -> usize {
+        self.output_batch_size
     }
 }
 

@@ -50,7 +50,7 @@ impl LogParseError {
 
 impl fmt::Display for LogParseError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Log parse error: {}", self.desc)
+        write!(f, "Log parse error: {} RAW: {}", self.get_desc(), self.get_raw().as_str())
     }
 }
 
@@ -71,15 +71,9 @@ impl Eq for ParsedValue {}
 impl Hash for ParsedValue {
     fn hash<H: Hasher>(&self, state: &mut H) {
         match self {
-            ParsedValue::NullVal => {
-                ParsedValue::NullVal.hash(state)
-            }
-            ParsedValue::BoolVal(b) => {
-                b.hash(state)
-            }
-            ParsedValue::LongVal(n) => {
-                n.hash(state)
-            }
+            ParsedValue::NullVal => ParsedValue::NullVal.hash(state),
+            ParsedValue::BoolVal(b) => b.hash(state),
+            ParsedValue::LongVal(n) => n.hash(state),
             ParsedValue::DoubleVal(d) => {
                 if d.is_nan() {
                     f64::NAN.to_bits().hash(state)
@@ -87,12 +81,8 @@ impl Hash for ParsedValue {
                     d.to_bits().hash(state)
                 }
             }
-            ParsedValue::TimeVal(t) => {
-                t.hash(state)
-            }
-            ParsedValue::StrVal(s) => {
-                s.hash(state)
-            }
+            ParsedValue::TimeVal(t) => t.hash(state),
+            ParsedValue::StrVal(s) => s.hash(state),
         }
     }
 }
@@ -352,19 +342,26 @@ impl ParsedData {
 
 #[derive(Debug)]
 pub struct ParsedMessage {
-    pub raw: RawMessage,
-    pub parsed: ParsedData,
+    raw: RawMessage,
+    parsed: ParsedData,
 }
 
 impl ParsedMessage {
     pub fn new(raw: RawMessage, parsed: ParsedData) -> ParsedMessage {
         ParsedMessage { raw, parsed }
     }
-    pub fn get_raw(&self) -> &RawMessage {
-        &self.raw
-    }
+
     pub fn get_parsed(&self) -> &ParsedData {
         &self.parsed
+    }
+
+    pub fn consume_raw(self) -> RawMessage {
+        self.raw
+    }
+
+    #[cfg(test)]
+    pub fn get_raw(&self) -> &RawMessage {
+        &self.raw
     }
 }
 
@@ -607,13 +604,13 @@ mod tests {
             String::from("SYSLOGLINE"),
             vec![
                 GrokColumnDef::new(
-                    Rc::new("timestamp".to_string()),
+                    Rc::from("timestamp"),
                     ParsedValueType::TimeType(TimeTypeFormat::new("%b %e %H:%M:%S")),
                     vec![Rc::new(String::from("timestamp"))],
                     true,
                 ),
                 GrokColumnDef::new(
-                    Rc::new("message".to_string()),
+                    Rc::from("message"),
                     ParsedValueType::StrType,
                     vec![Rc::new(String::from("message"))],
                     true,

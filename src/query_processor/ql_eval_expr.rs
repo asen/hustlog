@@ -2,12 +2,12 @@ use std::collections::HashMap;
 use std::ops::{Add, Div, Mul, Rem, Sub};
 use std::rc::Rc;
 
+use crate::query_processor::ql_schema::QlRowContext;
 use crate::query_processor::QueryError;
 use crate::{str2val, ParsedValue, ParsedValueType, TimeTypeFormat};
 use sqlparser::ast::{
     BinaryOperator, Expr, Function, FunctionArg, FunctionArgExpr, ObjectName, UnaryOperator, Value,
 };
-use crate::query_processor::ql_schema::QlRowContext;
 
 // pub struct StaticCtx<'a> {
 //     pd: Option<&'a ParsedData>,
@@ -32,7 +32,7 @@ use crate::query_processor::ql_schema::QlRowContext;
 //     }
 // }
 
-#[derive(PartialEq,Eq,Hash)]
+#[derive(PartialEq, Eq, Hash)]
 pub struct LazyExpr {
     name: Rc<str>,
     expr: Expr,

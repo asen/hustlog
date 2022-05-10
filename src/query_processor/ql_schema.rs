@@ -1,15 +1,14 @@
-use crate::query_processor::ql_agg_expr::{AggExpr, get_agg_expr};
-use crate::query_processor::ql_eval_expr::{LazyContext, LazyExpr, object_name_to_string};
-use crate::{GrokColumnDef, GrokSchema, ParsedMessage, ParsedValue, RawMessage};
+use crate::query_processor::ql_agg_expr::{get_agg_expr, AggExpr};
+use crate::query_processor::ql_eval_expr::{object_name_to_string, LazyContext, LazyExpr};
+use crate::query_processor::SqlSelectQuery;
+use crate::{GrokColumnDef, GrokSchema, ParsedMessage, ParsedValue, ParserColDef, ParserSchema, RawMessage};
 use sqlparser::ast::{BinaryOperator, Expr, SelectItem};
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt;
 use std::rc::Rc;
-use crate::query_processor::SqlSelectQuery;
 
-
-#[derive(PartialEq,Eq,Hash,Debug,Clone)]
+#[derive(PartialEq, Eq, Hash, Debug, Clone)]
 pub struct QueryError(String);
 
 impl QueryError {
@@ -48,66 +47,87 @@ impl fmt::Display for QueryError {
 
 impl Error for QueryError {}
 
-
 #[derive(Clone)]
 pub struct QlColDef {
-    name: Rc<str>,
-    //pv_type: ParsedValueType,
+    pcd: ParserColDef,
 }
 
 impl QlColDef {
     pub fn from(gcd: &GrokColumnDef) -> Self {
         Self {
-            name: Rc::from(gcd.col_name().as_str()),
-            //pv_type: gcd.col_type().clone(),
+            pcd: ParserColDef::new(gcd.col_name(), gcd.col_type()),
         }
+    }
+
+    pub fn name(&self) -> &Rc<str> {
+        &self.pcd.name()
+    }
+
+    pub fn get_pcd(&self) -> &ParserColDef {
+        &self.pcd
     }
 }
 
 #[derive(Clone)]
 pub struct QlSchema {
+    name: Rc<str>,
     cols: Vec<QlColDef>,
 }
 
 impl QlSchema {
     pub fn from(gs: &GrokSchema) -> QlSchema {
-        let cols = gs.columns().iter().map(|gcd|{
-            QlColDef::from(gcd)
-        }).collect::<Vec<_>>();
+        let cols = gs
+            .columns()
+            .iter()
+            .map(|gcd| QlColDef::from(gcd))
+            .collect::<Vec<_>>();
         Self {
+            name: Rc::from(gs.name()),
             cols
         }
     }
+}
 
+impl ParserSchema for QlSchema {
+    fn name(&self) -> &str {
+        self.name.as_ref()
+    }
+
+    fn col_defs(&self) -> Vec<&ParserColDef> {
+        self.cols.iter().map(|cd| {
+            cd.get_pcd()
+        }).collect()
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct QlRow {
     raw: Option<RawMessage>,
-    data: Vec<(Rc<str>, ParsedValue)>
+    data: Vec<(Rc<str>, ParsedValue)>,
 }
 
 impl QlRow {
     pub fn new(raw: Option<RawMessage>, data: Vec<(Rc<str>, ParsedValue)>) -> Self {
-        Self {
-            raw,
-            data,
-        }
+        Self { raw, data }
     }
 
     pub fn from_parsed_message(pm: ParsedMessage, schema: &QlSchema) -> QlRow {
-        let ParsedMessage { raw, parsed } = pm;
-        let rdata = schema.cols.iter().map(|qc|{
-            (
-                qc.name.clone(),
-                parsed
-                    .get_value(qc.name.as_ref())
-                    .map(|x| x.clone())
-                    .unwrap_or(ParsedValue::NullVal)
-            )
-        }).collect::<Vec<_>>();
+        let parsed = pm.get_parsed();
+        let rdata = schema
+            .cols
+            .iter()
+            .map(|qc| {
+                (
+                    qc.name().clone(),
+                    parsed
+                        .get_value(qc.name().as_ref())
+                        .map(|x| x.clone())
+                        .unwrap_or(ParsedValue::NullVal),
+                )
+            })
+            .collect::<Vec<_>>();
         Self {
-            raw: Some(raw),
+            raw: Some(pm.consume_raw()),
             data: rdata,
         }
     }
@@ -121,18 +141,15 @@ impl QlRow {
     }
 }
 
-
 pub struct QlRowContext<'a> {
     row: Option<&'a QlRow>,
-    lookup_map: HashMap<Rc<str>,&'a ParsedValue>
+    lookup_map: HashMap<Rc<str>, &'a ParsedValue>,
 }
 
-
 impl<'a> QlRowContext<'a> {
-
     pub fn from_row(row: &'a QlRow) -> QlRowContext {
-        let mut lookup_map: HashMap<Rc<str>,&ParsedValue> = HashMap::new();
-        for (k,v) in &row.data {
+        let mut lookup_map: HashMap<Rc<str>, &ParsedValue> = HashMap::new();
+        for (k, v) in &row.data {
             lookup_map.insert(k.clone(), v);
         }
         Self {
@@ -153,15 +170,13 @@ impl<'a> QlRowContext<'a> {
     }
 
     pub fn get_value(&self, key: &str) -> Option<ParsedValue> {
-        self.lookup_map.get(key).map(|&v|{
-            v.clone()
-        })
+        self.lookup_map.get(key).map(|&v| v.clone())
     }
 }
 
 pub enum QlSelectItem {
     RawMessage,                // *
-    LazyExpr(LazyExpr),         // per row expr, must be cloned per row
+    LazyExpr(LazyExpr),        // per row expr, must be cloned per row
     AggExpr(Box<dyn AggExpr>), //per query expression (aggregate)
 }
 
@@ -171,9 +186,7 @@ pub struct QlSelectCols {
 
 impl QlSelectCols {
     pub fn new(cols: Vec<QlSelectItem>) -> Self {
-        Self {
-            cols
-        }
+        Self { cols }
     }
 
     pub fn has_raw_message(&self) -> bool {
@@ -192,21 +205,29 @@ impl QlSelectCols {
         })
     }
 
-    pub fn validate_group_by_cols(&self, group_by_col_ixes: &Vec<usize>) -> Result<bool, QueryError> {
+    pub fn validate_group_by_cols(
+        &self,
+        group_by_col_ixes: &Vec<usize>,
+    ) -> Result<bool, QueryError> {
         let has_agg = self.has_agg_expr();
-        let gbe_ixes_set = group_by_col_ixes.iter()
-            .map(|x| *x).collect::<HashSet<usize>>();
+        let gbe_ixes_set = group_by_col_ixes
+            .iter()
+            .map(|x| *x)
+            .collect::<HashSet<usize>>();
         if !has_agg && !gbe_ixes_set.is_empty() {
-            return Err(QueryError::new("GROUP BY requires an aggregate function to be specified"));
+            return Err(QueryError::new(
+                "GROUP BY requires an aggregate function to be specified",
+            ));
         }
         if has_agg {
             for (i, c) in self.cols.iter().enumerate() {
-               if let QlSelectItem::LazyExpr(_) = c {
-                   if !gbe_ixes_set.contains(&i) {
-                       return Err(QueryError::new(
-                           "All non-aggregate select expressions must be part of the GROUP BY "));
-                   }
-               }
+                if let QlSelectItem::LazyExpr(_) = c {
+                    if !gbe_ixes_set.contains(&i) {
+                        return Err(QueryError::new(
+                            "All non-aggregate select expressions must be part of the GROUP BY ",
+                        ));
+                    }
+                }
             }
         }
         Ok(has_agg)
@@ -265,29 +286,26 @@ impl QlSelectCols {
         ret
     }
 
-    pub fn cols(&self) -> &Vec<QlSelectItem> { &self.cols }
+    pub fn cols(&self) -> &Vec<QlSelectItem> {
+        &self.cols
+    }
 }
 
 fn get_res_col(name: &str, expr: &Expr) -> (Rc<str>, QlSelectItem) {
     let my_name: Rc<str> = Rc::from(name);
     let agg = get_agg_expr(&my_name, expr);
     match agg {
-        Ok(opt) => {
-            match opt {
-                None => {
-                    (my_name.clone(), QlSelectItem::LazyExpr(LazyExpr::new(my_name.clone(), expr)))
-                }
-                Some(agg) => {
-                    (my_name, QlSelectItem::AggExpr(agg))
-                }
-            }
-        }
-        Err(x) => {
-            (
+        Ok(opt) => match opt {
+            None => (
                 my_name.clone(),
-                QlSelectItem::LazyExpr(LazyExpr::err(my_name.clone(), x)),
-            )
-        }
+                QlSelectItem::LazyExpr(LazyExpr::new(my_name.clone(), expr)),
+            ),
+            Some(agg) => (my_name, QlSelectItem::AggExpr(agg)),
+        },
+        Err(x) => (
+            my_name.clone(),
+            QlSelectItem::LazyExpr(LazyExpr::err(my_name.clone(), x)),
+        ),
     }
 }
 
@@ -312,7 +330,9 @@ pub fn get_res_cols(_schema: &GrokSchema, qry: &SqlSelectQuery) -> Vec<QlSelectI
                     //(
                     //my_name.clone(),
                     QlSelectItem::LazyExpr(LazyExpr::err(
-                        my_name.clone(), QueryError::not_supported("SelectItem::QualifiedWildcard"))),
+                        my_name.clone(),
+                        QueryError::not_supported("SelectItem::QualifiedWildcard"),
+                    )),
                     //)
                 ]
             }
@@ -342,4 +362,3 @@ pub fn get_res_cols(_schema: &GrokSchema, qry: &SqlSelectQuery) -> Vec<QlSelectI
         })
         .collect::<Vec<_>>()
 }
-
