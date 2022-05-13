@@ -8,42 +8,44 @@ use std::io::Write;
 use clap::Parser;
 
 use conf::*;
+use output::*;
 use parser::*;
 
 use crate::query_processor::{ParserIteratorInputTable, process_sql, QlInputTable, QlMemTable, QlSchema};
-use crate::sqlgen::{ql_table_to_sql, SqlCreateSchema};
+use crate::sqlgen::SqlCreateSchema;
 
 mod conf;
 mod parser;
 mod query_processor;
 mod sqlgen;
+mod output;
 
-fn print_result_table(
-    mut rt: Box<dyn QlInputTable>,
-    out: &mut Box<dyn Write>,
-    sep: &str,
-) -> Result<(), Box<dyn Error>> {
-    let mut i = 0;
-    while let Some(r) = rt.read_row()? {
-        i += 1;
-        let istr = format!("({}) ", i);
-        out.write(istr.as_bytes())?;
-        out.write("COMPUTED:".as_bytes())?;
-        for (cn, cv) in r.data() {
-            out.write(sep.as_bytes())?;
-            out.write(cn.as_bytes())?;
-            out.write("=".as_bytes())?;
-            out.write(cv.to_rc_str().as_bytes())?;
-        }
-
-        out.write("\nRAW: ".as_bytes())?;
-        if r.raw().is_some() {
-            out.write(r.raw().as_ref().unwrap().as_str().as_bytes())?;
-        };
-        out.write("\n".as_bytes())?;
-    }
-    Ok(())
-}
+// fn print_result_table(
+//     mut rt: Box<dyn QlInputTable>,
+//     out: &mut Box<dyn Write>,
+//     sep: &str,
+// ) -> Result<(), Box<dyn Error>> {
+//     let mut i = 0;
+//     while let Some(r) = rt.read_row()? {
+//         i += 1;
+//         let istr = format!("({}) ", i);
+//         out.write(istr.as_bytes())?;
+//         out.write("COMPUTED:".as_bytes())?;
+//         for (cn, cv) in r.data() {
+//             out.write(sep.as_bytes())?;
+//             out.write(cn.as_bytes())?;
+//             out.write("=".as_bytes())?;
+//             out.write(cv.to_rc_str().as_bytes())?;
+//         }
+//
+//         out.write("\nRAW: ".as_bytes())?;
+//         if r.raw().is_some() {
+//             out.write(r.raw().as_ref().unwrap().as_str().as_bytes())?;
+//         };
+//         out.write("\n".as_bytes())?;
+//     }
+//     Ok(())
+// }
 
 fn main_print_default_patterns(mut outp: Box<dyn Write>) -> Result<(), Box<dyn Error>> {
     for (p, s) in GrokParser::default_patterns() {
@@ -55,6 +57,25 @@ fn main_print_default_patterns(mut outp: Box<dyn Write>) -> Result<(), Box<dyn E
     return Ok(());
 }
 
+fn get_output_sink(ofrmt: OutputFormat,
+                   add_ddl: bool,
+                   outp_batch_size: usize,
+                   ql_schema: QlSchema,
+                   outp: Box<dyn Write>) -> Box<dyn OutputSink> {
+    match ofrmt {
+        OutputFormat::DEFAULT => {
+            Box::new(CsvOutput::new(ql_schema, outp, add_ddl))
+        }
+        OutputFormat::SQL => {
+            Box::new( AnsiSqlOutput::new(
+                ql_schema,
+                add_ddl,
+                outp_batch_size,
+                outp,
+            ) )
+        }
+    }
+}
 
 fn main_process_pit(
     schema: &GrokSchema,
@@ -63,7 +84,7 @@ fn main_process_pit(
     outp_format: OutputFormat,
     outp_batch_size: usize,
     add_ddl: bool,
-    mut outp: Box<dyn Write>,
+    outp: Box<dyn Write>,
 )  -> Result<(), Box<dyn Error>> {
     // consume the parser iterator
     // if sql is provided -> apply it
@@ -81,20 +102,18 @@ fn main_process_pit(
         Box::new(itbl ) as Box<dyn QlInputTable>
     };
 
-    match outp_format {
-        OutputFormat::DEFAULT => {
-            print_result_table(query_output, &mut outp, ",")?;
-        }
-        OutputFormat::SQL => {
-            if add_ddl {
-                let ddl = SqlCreateSchema::from_grok_schema(&schema);
-                let s = ddl.get_create_sql();
-                outp.write(s.as_bytes())?;
-                outp.write("\n".as_bytes())?;
-            }
-            ql_table_to_sql(&mut query_output, outp, outp_batch_size)?;
-        }
+    let mut out_sink = get_output_sink(
+        outp_format,
+        add_ddl,
+        outp_batch_size,
+        query_output.ql_schema().clone(),
+        outp,
+    );
+    out_sink.output_header()?;
+    while let Some(r) = query_output.read_row()? {
+        out_sink.output_row(r)?;
     }
+    out_sink.flush()?;
     Ok(())
 }
 
@@ -118,7 +137,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             &schema,
             pit,
             args.query().as_ref(),
-            args.output_format().unwrap_or(OutputFormat::DEFAULT),
+            args.output_format(),
             args.output_batch_size(),
             args.output_add_ddl(),
             outp

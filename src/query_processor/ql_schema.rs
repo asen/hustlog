@@ -1,7 +1,7 @@
 use crate::query_processor::ql_agg_expr::{get_agg_expr, AggExpr};
-use crate::query_processor::ql_eval_expr::{object_name_to_string, LazyContext, LazyExpr};
+use crate::query_processor::ql_eval_expr::{object_name_to_string, LazyContext, LazyExpr, eval_expr_type};
 use crate::query_processor::SqlSelectQuery;
-use crate::{GrokColumnDef, GrokSchema, ParsedMessage, ParsedValue, ParserColDef, ParserSchema, RawMessage};
+use crate::{GrokColumnDef, GrokSchema, ParsedMessage, ParsedValue, ParsedValueType, ParserColDef, ParserSchema, RawMessage};
 use sqlparser::ast::{BinaryOperator, Expr, SelectItem};
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
@@ -53,6 +53,13 @@ pub struct QlColDef {
 }
 
 impl QlColDef {
+
+    pub fn new(name: &str, pv_type: ParsedValueType) -> Self {
+        Self {
+            pcd: ParserColDef::new(name, &pv_type),
+        }
+    }
+
     pub fn from(gcd: &GrokColumnDef) -> Self {
         Self {
             pcd: ParserColDef::new(gcd.col_name(), gcd.col_type()),
@@ -75,6 +82,12 @@ pub struct QlSchema {
 }
 
 impl QlSchema {
+    pub fn new(name: Rc<str>, cols: Vec<QlColDef>) -> Self {
+        Self {
+            name,
+            cols
+        }
+    }
     pub fn from(gs: &GrokSchema) -> QlSchema {
         let cols = gs
             .columns()
@@ -138,6 +151,12 @@ impl QlRow {
 
     pub fn data(&self) -> &Vec<(Rc<str>, ParsedValue)> {
         &self.data
+    }
+
+    pub fn data_as_strs(&self) -> Vec<Rc<str>> {
+        self.data().iter().map(|x|{
+            x.1.to_rc_str()
+        }).collect::<Vec<_>>()
     }
 }
 
@@ -288,6 +307,34 @@ impl QlSelectCols {
 
     pub fn cols(&self) -> &Vec<QlSelectItem> {
         &self.cols
+    }
+
+    pub fn to_out_schema(&self, inp_schema: &QlSchema) -> Result<QlSchema,QueryError> {
+        let ctx = inp_schema.cols.iter().map(|qcd| {
+            (qcd.name().clone(), qcd.pcd.pv_type().clone())
+        }).collect::<HashMap<Rc<str>,ParsedValueType>>();
+        let cols = self.cols.iter().map(|cd|{
+            let nt = match cd {
+                QlSelectItem::RawMessage => {
+                    ("_raw",
+                    Ok(ParsedValueType::StrType))
+                }
+                QlSelectItem::LazyExpr(x) => {
+                    (x.name().as_ref(), eval_expr_type(x.expr(), &ctx))
+                }
+                QlSelectItem::AggExpr(ax) => {
+                    (ax.name().as_ref(), ax.result_type(&ctx))
+                }
+            };
+
+            (nt.0, nt.1)
+        }).collect::<Vec<_>>();
+        let mut my_cols = Vec::new();
+        for (k,v) in cols {
+            let col = QlColDef::new(k, v?);
+            my_cols.push(col)
+        }
+        Ok(QlSchema::new(inp_schema.name.clone(), my_cols))
     }
 }
 

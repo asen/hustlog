@@ -1,7 +1,7 @@
-use crate::{ParsedValue, ParserSchema, QlInputTable};
+use crate::{ParsedValue, ParserSchema};
 use std::error::Error;
 use std::io::Write;
-use crate::query_processor::{QlRow, QlSchema};
+use crate::query_processor::QlRow;
 
 fn output_value_for_sql(pv: &ParsedValue, outp: &mut Box<dyn Write>) -> Result<(), Box<dyn Error>> {
     match pv {
@@ -44,16 +44,16 @@ fn output_value_for_sql(pv: &ParsedValue, outp: &mut Box<dyn Write>) -> Result<(
     Ok(())
 }
 
-pub struct BatchedInserts<'a> {
-    schema: &'a Box<&'a dyn ParserSchema>,
+pub struct BatchedInserts {
+    schema: Box<dyn ParserSchema>,
     batch_size: usize,
     buf: Vec<QlRow>,
     outp: Box<dyn Write>,
 }
 
-impl<'a> BatchedInserts<'a> {
+impl BatchedInserts {
     pub fn new(
-        schema: &'a Box<&dyn ParserSchema>,
+        schema: Box<dyn ParserSchema>,
         batch_size: usize,
         outp: Box<dyn Write>,
     ) -> Self {
@@ -63,6 +63,12 @@ impl<'a> BatchedInserts<'a> {
             buf: Vec::new(),
             outp,
         }
+    }
+
+    pub fn print_header_str(&mut self, s: &str) -> Result<(), Box<dyn Error>> {
+        self.outp.write(s.as_bytes())?;
+        self.outp.write("\n".as_bytes())?;
+        Ok(())
     }
 
     pub fn add_to_batch(&mut self, row: QlRow) -> Result<(), Box<dyn Error>> {
@@ -127,28 +133,29 @@ impl<'a> BatchedInserts<'a> {
 //     Ok(())
 // }
 
-pub fn ql_table_to_sql(
-    inp: &mut Box<dyn QlInputTable>,
-    outp: Box<dyn Write>,
-    batch_size: usize,
-) -> Result<(), Box<dyn Error>> {
-    let ql_schema: QlSchema = inp.ql_schema().clone();
-    let bs: Box<&dyn ParserSchema> = Box::new(&ql_schema as &dyn ParserSchema);
-    let mut sql_inserts = BatchedInserts::new(&bs, batch_size, outp);
-    while let Some(row) = inp.read_row()? {
-        sql_inserts.add_to_batch(row)?;
-    }
-    sql_inserts.flush()?;
-    Ok(())
-}
-
 #[cfg(test)]
 mod test {
+    use std::error::Error;
     use crate::sqlgen::sql_create::SqlCreateSchema;
-    use crate::sqlgen::sql_insert::ql_table_to_sql;
-    use crate::{ParserIteratorInputTable, QlInputTable, QlSchema, test_syslog_schema};
+    use crate::{ParserIteratorInputTable, ParserSchema, QlInputTable, QlSchema, test_syslog_schema};
     use std::io;
     use std::io::{BufRead, BufReader, BufWriter, Write};
+    use crate::sqlgen::BatchedInserts;
+
+    pub fn ql_table_to_sql(
+        inp: &mut Box<dyn QlInputTable>,
+        outp: Box<dyn Write>,
+        batch_size: usize,
+    ) -> Result<(), Box<dyn Error>> {
+        let ql_schema: QlSchema = inp.ql_schema().clone();
+        let ql_schema: Box<dyn ParserSchema> = Box::new(ql_schema);
+        let mut sql_inserts = BatchedInserts::new(ql_schema, batch_size, outp);
+        while let Some(row) = inp.read_row()? {
+            sql_inserts.add_to_batch(row)?;
+        }
+        sql_inserts.flush()?;
+        Ok(())
+    }
 
     const LINES1: &str = "Apr 22 02:34:54 actek-mac login[49532]: USER_PROCESS: 49532 ttys000\n\
         Apr 22 04:42:04 actek-mac syslogd[103]: ASL Sender Statistics\n\
@@ -167,7 +174,8 @@ mod test {
     #[test]
     fn test_sql_gen1() {
         let schema = test_syslog_schema();
-        let ddl = SqlCreateSchema::from_grok_schema(&schema);
+        let ql_schema = QlSchema::from(&schema);
+        let ddl = SqlCreateSchema::from_ql_schema(&ql_schema);
         let s = ddl.get_create_sql();
         let mut out = get_stdout();
         out.write(s.as_bytes()).unwrap();

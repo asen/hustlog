@@ -27,6 +27,7 @@ pub trait QlOutputTable {
         offset: i64,
         order_by_exprs: &Vec<(usize, bool)>,
     ) -> Box<&dyn QlInputTable>;
+    fn set_schema(&mut self, new_schema: QlSchema);
 }
 
 pub struct ParserIteratorInputTable {
@@ -80,10 +81,6 @@ impl QlMemTable {
     pub fn get_rows(&self) -> &Vec<QlRow> {
         &self.buf
     }
-
-    // pub fn get_schema(&self) -> &QlSchema {
-    //     &self.schema
-    // }
 }
 
 impl QlOutputTable for QlMemTable {
@@ -95,6 +92,10 @@ impl QlOutputTable for QlMemTable {
 
     fn num_written(&self) -> usize {
         self.written
+    }
+
+    fn set_schema(&mut self, new_schema: QlSchema) {
+        self.schema = new_schema;
     }
 
     fn ordered_slice(
@@ -361,6 +362,7 @@ pub fn eval_query(
     let needs_raw = select_c.has_raw_message();
     let mut gb_context = QlGroupByContext::new();
     let mut my_offset = offset;
+    let mut out_schema_set = false;
     while let Some(irow) = inp.read_row()? {
         let raw: Option<RawMessage> = if needs_raw { irow.raw().clone() } else { None };
         let static_ctx = QlRowContext::from_row(&irow);
@@ -388,6 +390,10 @@ pub fn eval_query(
                     my_offset -= 1
                 } else {
                     let orow = QlRow::new(raw, outp_vals);
+                    if !out_schema_set {
+
+                        out_schema_set = true
+                    }
                     outp.write_row(orow)?;
                     if !has_order_by && limit.is_some() && outp.num_written() >= limit.unwrap() {
                         break;
@@ -426,6 +432,7 @@ pub fn process_sql(
     // let mut out_table_ref: Box<&mut dyn QlOutputTable> = Box::new(&mut out_table);
     let res_cols = get_res_cols(schema, &qry);
     let select_c = QlSelectCols::new(res_cols);
+    out_table.set_schema(select_c.to_out_schema(&ql_schema)?);
     let true_expr = Expr::Value(Value::Boolean(true));
     let where_c: &Expr = &qry.get_select().selection.as_ref().unwrap_or(&true_expr);
     let mut empty_lazy_context = LazyContext::empty();

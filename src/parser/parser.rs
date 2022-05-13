@@ -71,7 +71,7 @@ impl Eq for ParsedValue {}
 impl Hash for ParsedValue {
     fn hash<H: Hasher>(&self, state: &mut H) {
         match self {
-            ParsedValue::NullVal => ParsedValue::NullVal.hash(state),
+            ParsedValue::NullVal => "NULL".hash(state),
             ParsedValue::BoolVal(b) => b.hash(state),
             ParsedValue::LongVal(n) => n.hash(state),
             ParsedValue::DoubleVal(d) => {
@@ -128,7 +128,7 @@ impl PartialEq for ParsedValue {
                 if let ParsedValue::StrVal(x) = other {
                     s.as_str().eq(x.as_str())
                 } else {
-                    s.as_str().eq(other.to_rc_str().as_str())
+                    s.as_str().eq(other.to_rc_str().as_ref())
                 }
             }
         }
@@ -198,19 +198,19 @@ impl ParsedValue {
         }
     }
 
-    pub fn to_rc_str(&self) -> Rc<String> {
+    pub fn to_rc_str(&self) -> Rc<str> {
         match self {
-            ParsedValue::NullVal => Rc::new("NULL".to_string()),
-            ParsedValue::BoolVal(x) => Rc::new(x.to_string()),
-            ParsedValue::StrVal(x) => x.clone(),
-            ParsedValue::LongVal(x) => Rc::new(x.to_string()),
-            ParsedValue::DoubleVal(x) => Rc::new(x.to_string()),
-            ParsedValue::TimeVal(x) => Rc::new(x.to_string()),
+            ParsedValue::NullVal => Rc::from("NULL"),
+            ParsedValue::BoolVal(x) => Rc::from(x.to_string().as_str()),
+            ParsedValue::StrVal(x) => Rc::from(x.as_str()),
+            ParsedValue::LongVal(x) => Rc::from(x.to_string().as_str()),
+            ParsedValue::DoubleVal(x) => Rc::from(x.to_string().as_str()),
+            ParsedValue::TimeVal(x) => Rc::from(x.to_string().as_str()),
         }
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug,PartialEq)]
 pub struct TimeTypeFormat {
     format_specifier: Box<String>,
     needs_year: bool,
@@ -245,7 +245,7 @@ impl TimeTypeFormat {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ParsedValueType {
     NullType,
     BoolType,

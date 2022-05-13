@@ -213,13 +213,12 @@ impl MyArgs {
         &self.query
     }
 
-    pub fn output_format(&self) -> Option<OutputFormat> {
+    pub fn output_format(&self) -> OutputFormat {
         match &self.output_format {
-            None => None,
+            None => OutputFormat::DEFAULT,
             Some(of) => match of.to_ascii_lowercase().as_str() {
-                "sql" => Some(OutputFormat::SQL),
-                "default" => Some(OutputFormat::DEFAULT),
-                _ => None,
+                "sql" => OutputFormat::SQL,
+                _ => OutputFormat::DEFAULT,
             },
         }
     }

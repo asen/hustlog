@@ -5,9 +5,7 @@ use std::rc::Rc;
 use crate::query_processor::ql_schema::QlRowContext;
 use crate::query_processor::QueryError;
 use crate::{str2val, ParsedValue, ParsedValueType, TimeTypeFormat};
-use sqlparser::ast::{
-    BinaryOperator, Expr, Function, FunctionArg, FunctionArgExpr, ObjectName, UnaryOperator, Value,
-};
+use sqlparser::ast::{BinaryOperator, Expr, Function, FunctionArg, FunctionArgExpr, ObjectName, UnaryOperator, Value};
 
 // pub struct StaticCtx<'a> {
 //     pd: Option<&'a ParsedData>,
@@ -182,23 +180,54 @@ fn func_arg_to_pv(
     }
 }
 
+fn date_function_format<'a>(args_iter: &mut impl Iterator<Item=&'a FunctionArg>) -> Result<TimeTypeFormat, QueryError>{
+    let cur_arg: &FunctionArg = args_iter
+        .next()
+        .ok_or(QueryError::new("DATE function requires arguments"))?;
+    let curv: Result<String, QueryError> = if let FunctionArg::Unnamed(fax) = cur_arg {
+        if let FunctionArgExpr::Expr(xp) = fax {
+            if let Expr::Value(v) = xp {
+                match v {
+                    Value::SingleQuotedString(s) => {
+                        Ok(s.to_string())
+                    }
+                    Value::DoubleQuotedString(s) => {
+                        Ok(s.to_string())
+                    }
+                    _ => Err(QueryError::new(format!("Date format must be a quoted string: v={:?}", v).as_str()))
+                }
+            } else if let Expr::Identifier(id) = xp {
+                Ok(id.value.clone())
+            } else {
+                Err(QueryError::new(format!("Date format must be a quoted string: fax={:?}", fax).as_str()))
+            }
+        } else {
+            Err(QueryError::new(format!("Date format must be a quoted string: cur_arg={:?}", cur_arg).as_str()))
+        }
+    } else {
+        Err(QueryError::new("Date format must be a quoted string"))
+    };
+    Ok(TimeTypeFormat::new(curv?.as_str()))
+}
+
 fn eval_function_date(
     fun: &Function,
     ctx: &QlRowContext,
     dctx: &mut LazyContext,
 ) -> Result<ParsedValue, QueryError> {
     let mut args_iter = fun.args.iter();
-    let cur_arg: &FunctionArg = args_iter
-        .next()
-        .ok_or(QueryError::new("DATE function requires arguments"))?;
-    let curv = func_arg_to_pv(cur_arg, ctx, dctx)?;
-    let tformat = if let ParsedValue::StrVal(rs) = curv {
-        Ok(TimeTypeFormat::new(rs.as_str()))
-    } else {
-        Err(QueryError::new(
-            "DATE function first argument must be a time format string",
-        ))
-    }?;
+    // let cur_arg: &FunctionArg = args_iter
+    //     .next()
+    //     .ok_or(QueryError::new("DATE function requires arguments"))?;
+    // let curv = func_arg_to_pv(cur_arg, ctx, dctx)?;
+    // let tformat = if let ParsedValue::StrVal(rs) = curv {
+    //     Ok(TimeTypeFormat::new(rs.as_str()))
+    // } else {
+    //     Err(QueryError::new(
+    //         "DATE function first argument must be a time format string",
+    //     ))
+    // }?;
+    let tformat = date_function_format(&mut args_iter)?;
     let cur_arg: &FunctionArg = args_iter
         .next()
         .ok_or(QueryError::new("DATE function requires arguments"))?;
@@ -223,6 +252,20 @@ fn eval_function(
     let fun_name = object_name_to_string(&fun.name);
     match fun_name.as_str() {
         "DATE" => eval_function_date(fun, ctx, dctx),
+        _ => Err(QueryError::not_supported(&format!("Function: {:?}", fun))),
+    }
+}
+
+fn eval_function_type(
+    fun: &Function,
+    _ctx: &HashMap<Rc<str>,ParsedValueType>,
+) -> Result<ParsedValueType, QueryError> {
+    let fun_name = object_name_to_string(&fun.name);
+    match fun_name.as_str() {
+        "DATE" => {
+            let tfmt = date_function_format(&mut fun.args.iter())?;
+            Ok(ParsedValueType::TimeType(tfmt))
+        },
         _ => Err(QueryError::not_supported(&format!("Function: {:?}", fun))),
     }
 }
@@ -299,7 +342,7 @@ pub fn eval_expr(
                     let lstr = lval.to_rc_str();
                     let rstr = rval()?.to_rc_str();
                     Ok(ParsedValue::StrVal(Rc::new(
-                        [lstr.as_str(), rstr.as_str()].join(""),
+                        [lstr.as_ref(), rstr.as_ref()].join(""),
                     )))
                 }
                 BinaryOperator::Gt => Ok(ParsedValue::BoolVal(lval > rval()?)),
@@ -422,6 +465,174 @@ pub fn eval_expr(
         Expr::TypedString { .. } => Err(QueryError::not_impl("Expr::TypedString")),
         Expr::MapAccess { .. } => Err(QueryError::not_impl("Expr::MapAccess")),
         Expr::Function(f) => eval_function(f, ctx, dctx),
+        Expr::Case { .. } => Err(QueryError::not_impl("Expr::Case")),
+        Expr::Exists(_) => Err(QueryError::not_impl("Expr::Exists")),
+        Expr::Subquery(_) => Err(QueryError::not_impl("Expr::Subquery")),
+        Expr::ListAgg(_) => Err(QueryError::not_impl("Expr::ListAgg")),
+        Expr::GroupingSets(_) => Err(QueryError::not_impl("Expr::GroupingSets")),
+        Expr::Cube(_) => Err(QueryError::not_impl("Expr::Cube")),
+        Expr::Rollup(_) => Err(QueryError::not_impl("Expr::Rollup")),
+        Expr::Tuple(_) => Err(QueryError::not_impl("Expr::Tuple")),
+        Expr::ArrayIndex { .. } => Err(QueryError::not_impl("Expr::ArrayIndex")),
+        Expr::Array(_) => Err(QueryError::not_impl("Expr::Array")),
+    }
+}
+
+
+pub fn eval_expr_type(
+    expr: &Expr,
+    ctx: &HashMap<Rc<str>,ParsedValueType>,
+) -> Result<ParsedValueType, QueryError> {
+    match expr {
+        Expr::Identifier(x) => {
+            if x.quote_style.is_some() || ctx.is_empty() {
+                Ok(ParsedValueType::StrType)
+            } else {
+                let s = x.value.as_str();
+                if let Some(val) = ctx.get(s) {
+                    Ok(val.clone())
+                } else {
+                    Err(QueryError::new(
+                        format!("Can not determine expression type: {}",&x.value).as_str()))
+                }
+            }
+        }
+        Expr::CompoundIdentifier(_) => Err(QueryError::not_impl("Expr::CompoundIdentifier")),
+        Expr::IsNull(_x) => { Ok(ParsedValueType::BoolType) }
+        Expr::IsNotNull(_x) => { Ok(ParsedValueType::BoolType) }
+        Expr::IsDistinctFrom(_, _) => Err(QueryError::not_impl("Expr::IsDistinctFrom")),
+        Expr::IsNotDistinctFrom(_, _) => Err(QueryError::not_impl("Expr::IsNotDistinctFrom")),
+        Expr::InList { .. } => Err(QueryError::not_impl("Expr::InList")),
+        Expr::InSubquery { .. } => Err(QueryError::not_impl("Expr::InSubquery")),
+        Expr::InUnnest { .. } => Err(QueryError::not_impl("Expr::InUnnest")),
+        Expr::Between { .. } => Err(QueryError::not_impl("Expr::Between")),
+        Expr::BinaryOp { left, op, right } => {
+            let lval = eval_expr_type(left, ctx)?;
+            let rval = eval_expr_type(right, ctx)?;
+            let arithmetic_op_type = |_op| {
+                if lval == ParsedValueType::DoubleType || rval == ParsedValueType::DoubleType {
+                    Ok(ParsedValueType::DoubleType)
+                } else {
+                    Ok(ParsedValueType::LongType)
+                }
+            };
+            match op {
+                BinaryOperator::Plus => arithmetic_op_type(&op),
+                BinaryOperator::Minus => arithmetic_op_type(&op),
+                BinaryOperator::Multiply => arithmetic_op_type(&op),
+                BinaryOperator::Divide => arithmetic_op_type(&op),
+                BinaryOperator::Modulo => arithmetic_op_type(&op),
+                BinaryOperator::StringConcat => { Ok(ParsedValueType::StrType) }
+                BinaryOperator::Gt => Ok(ParsedValueType::BoolType),
+                BinaryOperator::Lt => Ok(ParsedValueType::BoolType),
+                BinaryOperator::GtEq => Ok(ParsedValueType::BoolType),
+                BinaryOperator::LtEq => Ok(ParsedValueType::BoolType),
+                BinaryOperator::Spaceship => Err(QueryError::not_impl("BinaryOperator::Spaceship")),
+                BinaryOperator::Eq => Ok(ParsedValueType::BoolType),
+                BinaryOperator::NotEq => Ok(ParsedValueType::BoolType),
+                BinaryOperator::And => Ok(ParsedValueType::BoolType),
+                BinaryOperator::Or => Ok(ParsedValueType::BoolType),
+                BinaryOperator::Xor => Ok(ParsedValueType::BoolType),
+                BinaryOperator::Like => Err(QueryError::not_impl("BinaryOperator::Like")),
+                BinaryOperator::NotLike => Err(QueryError::not_impl("BinaryOperator::NotLike")),
+                BinaryOperator::ILike => Err(QueryError::not_impl("BinaryOperator::ILike")),
+                BinaryOperator::NotILike => Err(QueryError::not_impl("BinaryOperator::NotILike")),
+
+                BinaryOperator::BitwiseOr => Err(QueryError::not_impl("BinaryOperator::BitwiseOr")),
+                BinaryOperator::BitwiseAnd => {
+                    Err(QueryError::not_impl("BinaryOperator::BitwiseAnd"))
+                }
+                BinaryOperator::BitwiseXor => {
+                    Err(QueryError::not_impl("BinaryOperator::BitwiseXor"))
+                }
+                BinaryOperator::PGBitwiseXor => {
+                    Err(QueryError::not_impl("BinaryOperator::PGBitwiseXor"))
+                }
+                BinaryOperator::PGBitwiseShiftLeft => {
+                    Err(QueryError::not_impl("BinaryOperator::PGBitwiseShiftLeft"))
+                }
+                BinaryOperator::PGBitwiseShiftRight => {
+                    Err(QueryError::not_impl("BinaryOperator::PGBitwiseShiftRight"))
+                }
+
+                BinaryOperator::PGRegexMatch => {
+                    Err(QueryError::not_impl("BinaryOperator::PGRegexMatch"))
+                }
+                BinaryOperator::PGRegexIMatch => {
+                    Err(QueryError::not_impl("BinaryOperator::PGRegexIMatch"))
+                }
+                BinaryOperator::PGRegexNotMatch => {
+                    Err(QueryError::not_impl("BinaryOperator::PGRegexNotMatch"))
+                }
+                BinaryOperator::PGRegexNotIMatch => {
+                    Err(QueryError::not_impl("BinaryOperator::PGRegexNotIMatch"))
+                }
+            }
+        }
+        Expr::UnaryOp { op, expr } => {
+            //let val = eval_expr_type(expr, ctx)?;
+            let _ = expr;
+            match op {
+                UnaryOperator::Plus => Err(QueryError::not_impl("UnaryOperator::Plus")),
+                UnaryOperator::Minus => Err(QueryError::not_impl("UnaryOperator::Minus")),
+                UnaryOperator::Not => Ok(ParsedValueType::BoolType),
+                UnaryOperator::PGBitwiseNot => {
+                    Err(QueryError::not_impl("UnaryOperator::PGBitwiseNot"))
+                }
+                UnaryOperator::PGSquareRoot => {
+                    Err(QueryError::not_impl("UnaryOperator::PGSquareRoot"))
+                }
+                UnaryOperator::PGCubeRoot => Err(QueryError::not_impl("UnaryOperator::PGCubeRoot")),
+                UnaryOperator::PGPostfixFactorial => {
+                    Err(QueryError::not_impl("UnaryOperator::PGPostfixFactorial"))
+                }
+                UnaryOperator::PGPrefixFactorial => {
+                    Err(QueryError::not_impl("UnaryOperator::PGPrefixFactorial"))
+                }
+                UnaryOperator::PGAbs => Err(QueryError::not_impl("UnaryOperator::PGAbs")),
+            }
+        }
+        Expr::Cast { .. } => Err(QueryError::not_impl("Expr::Cast")),
+        Expr::TryCast { .. } => Err(QueryError::not_impl("Expr::TryCast")),
+        Expr::Extract { .. } => Err(QueryError::not_impl("Expr::Extract")),
+        Expr::Substring { .. } => Err(QueryError::not_impl("Expr::Substring")),
+        Expr::Trim { .. } => Err(QueryError::not_impl("Expr::Trim")),
+        Expr::Collate { .. } => Err(QueryError::not_impl("Expr::Collate")),
+        Expr::Nested(be) => eval_expr_type(be, ctx),
+        Expr::Value(v) => {
+            match v {
+                Value::Number(x, _) => {
+                    let s: &String = x;
+                    if s.find('.').is_some() {
+                        Ok(ParsedValueType::DoubleType)
+                    } else {
+                        Ok(ParsedValueType::LongType)
+                    }
+                }
+                //Value::Number(x, _) => {}
+                Value::SingleQuotedString(_x) => {
+                    // let s: &String = x;
+                    Ok(ParsedValueType::StrType)
+                }
+                Value::NationalStringLiteral(_) => {
+                    Err(QueryError::not_impl("Value::NationalStringLiteral"))
+                }
+                Value::HexStringLiteral(_) => Err(QueryError::not_impl("Value::HexStringLiteral")),
+                Value::DoubleQuotedString(_x) => {
+                    Ok(ParsedValueType::StrType)
+                }
+                Value::Boolean(_b) => Ok(ParsedValueType::BoolType),
+                Value::Interval { .. } => Err(QueryError::not_impl("Value::Interval")),
+                Value::Null => Ok(ParsedValueType::NullType),
+                Value::Placeholder(_) => Err(QueryError::not_impl("Value::Placeholder")),
+                #[allow(unreachable_patterns)]
+                // XXX the IntelliJ IDE does not see this as unreachable
+                _ => Err(QueryError::not_supported("Impossible")),
+            }
+        }
+        Expr::TypedString { .. } => Err(QueryError::not_impl("Expr::TypedString")),
+        Expr::MapAccess { .. } => Err(QueryError::not_impl("Expr::MapAccess")),
+        Expr::Function(f) => eval_function_type(f, ctx),
         Expr::Case { .. } => Err(QueryError::not_impl("Expr::Case")),
         Expr::Exists(_) => Err(QueryError::not_impl("Expr::Exists")),
         Expr::Subquery(_) => Err(QueryError::not_impl("Expr::Subquery")),

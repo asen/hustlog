@@ -1,4 +1,4 @@
-use crate::{GrokSchema, ParsedValueType, ParserColDef, ParserSchema};
+use crate::{ParsedValueType, ParserColDef, ParserSchema, QlSchema};
 use std::rc::Rc;
 
 pub struct SqlCreateCol {
@@ -69,7 +69,7 @@ impl SqlCreateSchema {
         }
     }
 
-    pub fn from_grok_schema(schema: &GrokSchema) -> Self {
+    pub fn from_ql_schema(schema: &QlSchema) -> Self {
         let col_defs = schema
             .col_defs()
             .iter()
@@ -82,6 +82,20 @@ impl SqlCreateSchema {
             table_opts: Rc::from(""),
         }
     }
+
+    // pub fn from_grok_schema(schema: &GrokSchema) -> Self {
+    //     let col_defs = schema
+    //         .col_defs()
+    //         .iter()
+    //         .map(|&x| SqlCreateCol::from_parser_col_def(x))
+    //         .collect();
+    //     Self {
+    //         table_name: Rc::from(schema.name()),
+    //         col_defs,
+    //         pre_name_opts: Rc::from(""),
+    //         table_opts: Rc::from(""),
+    //     }
+    // }
 
     pub fn get_create_sql(&self) -> String {
         let col_defs_str = self

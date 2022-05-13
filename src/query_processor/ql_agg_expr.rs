@@ -2,7 +2,7 @@ use super::*;
 use crate::query_processor::ql_schema::QlRowContext;
 use sqlparser::ast::{Expr, FunctionArg, FunctionArgExpr};
 use std::borrow::BorrowMut;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 pub trait AggExpr {
@@ -14,6 +14,8 @@ pub trait AggExpr {
     fn clone_expr(&self) -> Box<dyn AggExpr>;
 
     fn name(&self) -> &Rc<str>;
+
+    fn result_type(&self, ctx: &HashMap<Rc<str>,ParsedValueType>) -> Result<ParsedValueType, QueryError>;
 }
 
 struct CountExpr {
@@ -44,6 +46,10 @@ impl AggExpr for CountExpr {
 
     fn name(&self) -> &Rc<str> {
         &self.name
+    }
+
+    fn result_type(&self, _ctx: &HashMap<Rc<str>,ParsedValueType>) -> Result<ParsedValueType, QueryError> {
+        Ok(ParsedValueType::LongType)
     }
 }
 
@@ -78,6 +84,10 @@ impl AggExpr for CountDistinctExpr {
 
     fn name(&self) -> &Rc<str> {
         &self.name
+    }
+
+    fn result_type(&self, _ctx: &HashMap<Rc<str>,ParsedValueType>) -> Result<ParsedValueType, QueryError> {
+        Ok(ParsedValueType::LongType)
     }
 }
 
@@ -119,6 +129,10 @@ impl AggExpr for MinExpr {
     fn name(&self) -> &Rc<str> {
         &self.name
     }
+
+    fn result_type(&self, ctx: &HashMap<Rc<str>,ParsedValueType>) -> Result<ParsedValueType, QueryError> {
+        eval_expr_type(&self.expr, ctx)
+    }
 }
 
 struct MaxExpr {
@@ -158,6 +172,10 @@ impl AggExpr for MaxExpr {
 
     fn name(&self) -> &Rc<str> {
         &self.name
+    }
+
+    fn result_type(&self, ctx: &HashMap<Rc<str>,ParsedValueType>) -> Result<ParsedValueType, QueryError> {
+        eval_expr_type(&self.expr, ctx)
     }
 }
 
@@ -223,6 +241,10 @@ impl AggExpr for SumExpr {
     fn name(&self) -> &Rc<str> {
         &self.name
     }
+
+    fn result_type(&self, ctx: &HashMap<Rc<str>,ParsedValueType>) -> Result<ParsedValueType, QueryError> {
+        eval_expr_type(&self.expr, ctx)
+    }
 }
 
 struct AvgExpr {
@@ -271,6 +293,10 @@ impl AggExpr for AvgExpr {
 
     fn name(&self) -> &Rc<str> {
         &self.sum_expr.name()
+    }
+
+    fn result_type(&self, _ctx: &HashMap<Rc<str>,ParsedValueType>) -> Result<ParsedValueType, QueryError> {
+        Ok(ParsedValueType::DoubleType)
     }
 }
 
