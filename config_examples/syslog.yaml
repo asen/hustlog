@@ -1,0 +1,23 @@
+
+input: /var/log/system.log
+merge_multi_line: true
+
+grok_pattern: SYSLOGLINE
+grok_schema_cols:
+  - "+timestamp:ts:%b %e %H:%M:%S"
+  - logsource
+  - program
+  - "pid:int"
+  - "+message"
+
+# grok_patterns_file: Option<String>
+grok_load_default: true
+grok_with_alias_only: false
+grok_ignore_default_patterns: false
+
+# query: "SELECT ..."
+
+output: "-"
+output_format: sql
+output_batch_size: 1000
+output_add_ddl: false

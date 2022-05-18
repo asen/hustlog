@@ -120,33 +120,29 @@ fn main_process_pit(
 fn main() -> Result<(), Box<dyn Error>> {
     let args: MyArgs = MyArgs::parse();
     //println!("ARGS: {:?}", args);
-    let outp: Box<dyn Write> = args.get_outp()?;
     if args.grok_list_default_patterns() {
+        let outp: Box<dyn Write> = args.get_outp()?;
         return main_print_default_patterns(outp);
     }
-    let log = args.get_logger();
-    let rdr = args.get_buf_read()?;
+    // no conf/schema before this point, no args after it.
+    let conf = HustlogConfig::new(args)?;
+    let outp: Box<dyn Write> = conf.get_outp()?;
+    let log = conf.get_logger();
+    let rdr = conf.get_buf_read()?;
     //println!("{:?}", args);
-    let schema_opt = args.get_grok_schema()?;
+    let schema = conf.get_grok_schema();
     //println!("{:?}", schema);
-    if schema_opt.is_some() {
-        let schema = schema_opt.unwrap();
-        let pit = schema
-            .create_parser_iterator(rdr, args.merge_multi_line(), log)?;
-        main_process_pit(
-            &schema,
-            pit,
-            args.query().as_ref(),
-            args.output_format(),
-            args.output_batch_size(),
-            args.output_add_ddl(),
-            outp
-        )
-    } else {
-        Err(Box::new(ConfigError::new(
-            "Missing grok pattern or column defs",
-        )))
-    }
+    let pit = schema
+        .create_parser_iterator(rdr, conf.merge_multi_line(), log)?;
+    main_process_pit(
+        &schema,
+        pit,
+        conf.query().as_ref(),
+        conf.output_format(),
+        conf.output_batch_size(),
+        conf.output_add_ddl(),
+        outp
+    )
 }
 
 #[test]
