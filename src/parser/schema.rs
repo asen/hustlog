@@ -1,28 +1,27 @@
 use crate::ParsedValueType;
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 pub struct ParserColDef {
-    name: Rc<str>,
+    name: Arc<str>,
     pv_type: ParsedValueType,
 }
 
 impl ParserColDef {
     pub fn new(name: &str, pv_type: &ParsedValueType) -> Self {
         Self {
-            name: Rc::from(name),
+            name: Arc::from(name),
             pv_type: pv_type.clone(),
         }
     }
 
-    pub fn name(&self) -> &Rc<str> {
+    pub fn name(&self) -> &Arc<str> {
         &self.name
     }
 
     pub fn pv_type(&self) -> &ParsedValueType {
         &self.pv_type
     }
-
 }
 
 pub trait ParserSchema {

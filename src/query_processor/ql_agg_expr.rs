@@ -3,7 +3,7 @@ use crate::query_processor::ql_schema::QlRowContext;
 use sqlparser::ast::{Expr, FunctionArg, FunctionArgExpr};
 use std::borrow::BorrowMut;
 use std::collections::{HashMap, HashSet};
-use std::rc::Rc;
+use std::sync::Arc;
 
 pub trait AggExpr {
     fn add_context(&mut self, ctx: &QlRowContext, dctx: &mut LazyContext)
@@ -13,13 +13,16 @@ pub trait AggExpr {
 
     fn clone_expr(&self) -> Box<dyn AggExpr>;
 
-    fn name(&self) -> &Rc<str>;
+    fn name(&self) -> &Arc<str>;
 
-    fn result_type(&self, ctx: &HashMap<Rc<str>,ParsedValueType>) -> Result<ParsedValueType, QueryError>;
+    fn result_type(
+        &self,
+        ctx: &HashMap<Arc<str>, ParsedValueType>,
+    ) -> Result<ParsedValueType, QueryError>;
 }
 
 struct CountExpr {
-    name: Rc<str>,
+    name: Arc<str>,
     cnt: i64,
 }
 
@@ -44,17 +47,20 @@ impl AggExpr for CountExpr {
         })
     }
 
-    fn name(&self) -> &Rc<str> {
+    fn name(&self) -> &Arc<str> {
         &self.name
     }
 
-    fn result_type(&self, _ctx: &HashMap<Rc<str>,ParsedValueType>) -> Result<ParsedValueType, QueryError> {
+    fn result_type(
+        &self,
+        _ctx: &HashMap<Arc<str>, ParsedValueType>,
+    ) -> Result<ParsedValueType, QueryError> {
         Ok(ParsedValueType::LongType)
     }
 }
 
 struct CountDistinctExpr {
-    name: Rc<str>,
+    name: Arc<str>,
     distinct_expr: Expr,
     distinct_vs: HashSet<ParsedValue>,
 }
@@ -82,17 +88,20 @@ impl AggExpr for CountDistinctExpr {
         })
     }
 
-    fn name(&self) -> &Rc<str> {
+    fn name(&self) -> &Arc<str> {
         &self.name
     }
 
-    fn result_type(&self, _ctx: &HashMap<Rc<str>,ParsedValueType>) -> Result<ParsedValueType, QueryError> {
+    fn result_type(
+        &self,
+        _ctx: &HashMap<Arc<str>, ParsedValueType>,
+    ) -> Result<ParsedValueType, QueryError> {
         Ok(ParsedValueType::LongType)
     }
 }
 
 struct MinExpr {
-    name: Rc<str>,
+    name: Arc<str>,
     expr: Expr,
     curv: Option<ParsedValue>,
 }
@@ -126,17 +135,20 @@ impl AggExpr for MinExpr {
         })
     }
 
-    fn name(&self) -> &Rc<str> {
+    fn name(&self) -> &Arc<str> {
         &self.name
     }
 
-    fn result_type(&self, ctx: &HashMap<Rc<str>,ParsedValueType>) -> Result<ParsedValueType, QueryError> {
+    fn result_type(
+        &self,
+        ctx: &HashMap<Arc<str>, ParsedValueType>,
+    ) -> Result<ParsedValueType, QueryError> {
         eval_expr_type(&self.expr, ctx)
     }
 }
 
 struct MaxExpr {
-    name: Rc<str>,
+    name: Arc<str>,
     expr: Expr,
     curv: Option<ParsedValue>,
 }
@@ -170,17 +182,20 @@ impl AggExpr for MaxExpr {
         })
     }
 
-    fn name(&self) -> &Rc<str> {
+    fn name(&self) -> &Arc<str> {
         &self.name
     }
 
-    fn result_type(&self, ctx: &HashMap<Rc<str>,ParsedValueType>) -> Result<ParsedValueType, QueryError> {
+    fn result_type(
+        &self,
+        ctx: &HashMap<Arc<str>, ParsedValueType>,
+    ) -> Result<ParsedValueType, QueryError> {
         eval_expr_type(&self.expr, ctx)
     }
 }
 
 struct SumExpr {
-    name: Rc<str>,
+    name: Arc<str>,
     expr: Expr,
     curv: Option<ParsedValue>,
 }
@@ -238,11 +253,14 @@ impl AggExpr for SumExpr {
         })
     }
 
-    fn name(&self) -> &Rc<str> {
+    fn name(&self) -> &Arc<str> {
         &self.name
     }
 
-    fn result_type(&self, ctx: &HashMap<Rc<str>,ParsedValueType>) -> Result<ParsedValueType, QueryError> {
+    fn result_type(
+        &self,
+        ctx: &HashMap<Arc<str>, ParsedValueType>,
+    ) -> Result<ParsedValueType, QueryError> {
         eval_expr_type(&self.expr, ctx)
     }
 }
@@ -291,11 +309,14 @@ impl AggExpr for AvgExpr {
         })
     }
 
-    fn name(&self) -> &Rc<str> {
+    fn name(&self) -> &Arc<str> {
         &self.sum_expr.name()
     }
 
-    fn result_type(&self, _ctx: &HashMap<Rc<str>,ParsedValueType>) -> Result<ParsedValueType, QueryError> {
+    fn result_type(
+        &self,
+        _ctx: &HashMap<Arc<str>, ParsedValueType>,
+    ) -> Result<ParsedValueType, QueryError> {
         Ok(ParsedValueType::DoubleType)
     }
 }
@@ -324,7 +345,7 @@ fn get_func_arg_expr(farg: &FunctionArg) -> Result<&Expr, QueryError> {
 }
 
 pub fn get_agg_expr(
-    col_name: &Rc<str>,
+    col_name: &Arc<str>,
     from: &Expr,
 ) -> Result<Option<Box<dyn AggExpr>>, QueryError> {
     let ret: Option<Result<Box<dyn AggExpr>, QueryError>> = if let Expr::Function(fun) = from {

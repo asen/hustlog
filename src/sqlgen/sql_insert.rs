@@ -1,7 +1,7 @@
+use crate::query_processor::QlRow;
 use crate::{ParsedValue, ParserSchema};
 use std::error::Error;
 use std::io::Write;
-use crate::query_processor::QlRow;
 
 fn output_value_for_sql(pv: &ParsedValue, outp: &mut Box<dyn Write>) -> Result<(), Box<dyn Error>> {
     match pv {
@@ -52,11 +52,7 @@ pub struct BatchedInserts {
 }
 
 impl BatchedInserts {
-    pub fn new(
-        schema: Box<dyn ParserSchema>,
-        batch_size: usize,
-        outp: Box<dyn Write>,
-    ) -> Self {
+    pub fn new(schema: Box<dyn ParserSchema>, batch_size: usize, outp: Box<dyn Write>) -> Self {
         Self {
             schema,
             batch_size,
@@ -100,7 +96,7 @@ impl BatchedInserts {
         while let Some(row) = rit.next() {
             self.outp.write("(".as_bytes())?;
             let mut cit = row.data().iter().peekable();
-            while let Some((_,pv)) = cit.next() {
+            while let Some((_, pv)) = cit.next() {
                 output_value_for_sql(pv, &mut self.outp)?;
                 if cit.peek().is_some() {
                     self.outp.write(",".as_bytes())?;
@@ -135,12 +131,14 @@ impl BatchedInserts {
 
 #[cfg(test)]
 mod test {
-    use std::error::Error;
     use crate::sqlgen::sql_create::SqlCreateSchema;
-    use crate::{ParserIteratorInputTable, ParserSchema, QlInputTable, QlSchema, test_syslog_schema};
+    use crate::sqlgen::BatchedInserts;
+    use crate::{
+        test_syslog_schema, ParserIteratorInputTable, ParserSchema, QlInputTable, QlSchema,
+    };
+    use std::error::Error;
     use std::io;
     use std::io::{BufRead, BufReader, BufWriter, Write};
-    use crate::sqlgen::BatchedInserts;
 
     pub fn ql_table_to_sql(
         inp: &mut Box<dyn QlInputTable>,
@@ -184,10 +182,7 @@ mod test {
         let pit = schema
             .create_parser_iterator(rdr, false, get_logger())
             .unwrap();
-        let itbl = ParserIteratorInputTable::new(
-            pit,
-            QlSchema::from(&schema)
-        );
+        let itbl = ParserIteratorInputTable::new(pit, QlSchema::from(&schema));
         let mut itbl_box = Box::new(itbl) as Box<dyn QlInputTable>;
         ql_table_to_sql(&mut itbl_box, out, 2).unwrap();
     }

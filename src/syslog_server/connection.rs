@@ -1,0 +1,102 @@
+use crate::{LineMerger, RawMessage, SpaceLineMerger};
+use bytes::{Buf, BytesMut};
+use std::error::Error;
+use std::net::SocketAddr;
+use tokio::io::AsyncReadExt;
+use tokio::net::TcpStream;
+
+pub struct ServerConnection {
+    socket: TcpStream,
+    remote_addr: SocketAddr,
+    buffer: BytesMut,
+    line_merger: Option<SpaceLineMerger>,
+}
+
+impl ServerConnection {
+    pub fn new(socket: TcpStream, remote_addr: SocketAddr, use_line_merger: bool) -> Self {
+        let line_merger = if use_line_merger {
+            Some(SpaceLineMerger::new())
+        } else {
+            None
+        };
+        Self {
+            socket,
+            remote_addr,
+            buffer: BytesMut::with_capacity(64 * 1024),
+            line_merger,
+        }
+    }
+
+    pub async fn receive_messsage(&mut self) -> Result<Option<RawMessage>, Box<dyn Error>> {
+        loop {
+            if let Some(msg) = self.read_message_from_buf() {
+                return Ok(Some(msg));
+            }
+            let bytes_read = self.socket.read_buf(&mut self.buffer).await?;
+            //println!("DEBUG: bytes_read={}", bytes_read);
+            if 0 == bytes_read {
+                // The remote closed the connection. For this to be a clean
+                // shutdown, there should be no data in the read buffer. If
+                // there is, this means that the peer closed the socket while
+                // sending a full line.
+                if self.line_merger.is_some() {
+                    return Ok(self.line_merger.as_mut().unwrap().flush());
+                }
+                if self.buffer.is_empty() {
+                    return Ok(None);
+                } else {
+                    let err_msg = format!("connection reset by peer: {:?}", self.remote_addr);
+                    return Err(err_msg.into());
+                }
+            }
+        }
+    }
+
+    // drop leading \r or \n s in buffer
+    fn drop_leading_newlines(&mut self) {
+        loop {
+            let f = self.buffer.first();
+            if f.is_none() {
+                break;
+            }
+            let f = f.unwrap();
+            if *f == '\r' as u8 || *f == '\n' as u8 {
+                self.buffer.advance(1)
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn read_line_from_buf(&mut self) -> Option<String> {
+        let pos_of_nl = self
+            .buffer
+            .iter()
+            .position(|x| *x == '\r' as u8 || *x == '\n' as u8);
+        if pos_of_nl.is_none() {
+            None
+        } else {
+            let line = self.buffer.split_to(pos_of_nl.unwrap());
+            let utf8_str = String::from_utf8_lossy(line.as_ref()).to_string();
+            self.drop_leading_newlines();
+            Some(utf8_str)
+        }
+    }
+
+    fn read_message_from_buf(&mut self) -> Option<RawMessage> {
+        let has_line_meger = self.line_merger.is_some();
+        if has_line_meger {
+            let mut ret: Option<RawMessage> = None;
+            while let Some(line) = self.read_line_from_buf() {
+                let lm = self.line_merger.as_mut().unwrap();
+                ret = lm.add_line(line);
+                if ret.is_some() {
+                    break;
+                }
+            }
+            ret
+        } else {
+            self.read_line_from_buf().map(|ln| RawMessage::new(ln))
+        }
+    }
+}

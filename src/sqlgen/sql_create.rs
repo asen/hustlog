@@ -1,19 +1,18 @@
 use crate::{ParsedValueType, ParserColDef, ParserSchema, QlSchema};
-use std::rc::Rc;
+use std::sync::Arc;
 
 pub struct SqlCreateCol {
-    name: Rc<str>,
-    sql_type: Rc<str>,
-    extra_spec: Rc<str>, // NOT NULL DEFAULT ...
+    name: Arc<str>,
+    sql_type: Arc<str>,
+    extra_spec: Arc<str>, // NOT NULL DEFAULT ...
 }
 
 impl SqlCreateCol {
-
     #[cfg(test)]
     pub fn new(
-        name: Rc<str>,
-        sql_type: Rc<str>,
-        extra_spec: Rc<str>, // NOT NULL DEFAULT ...
+        name: Arc<str>,
+        sql_type: Arc<str>,
+        extra_spec: Arc<str>, // NOT NULL DEFAULT ...
     ) -> Self {
         Self {
             name,
@@ -35,8 +34,8 @@ impl SqlCreateCol {
         };
         Self {
             name: pcd.name().clone(),
-            sql_type: Rc::from(sql_type),
-            extra_spec: Rc::from(""),
+            sql_type: Arc::from(sql_type),
+            extra_spec: Arc::from(""),
         }
     }
 
@@ -46,20 +45,19 @@ impl SqlCreateCol {
 }
 
 pub struct SqlCreateSchema {
-    table_name: Rc<str>,
+    table_name: Arc<str>,
     col_defs: Vec<SqlCreateCol>,
-    pre_name_opts: Rc<str>, // "if not exists"
-    table_opts: Rc<str>,    // stuff to add at the end of the statement
+    pre_name_opts: Arc<str>, // "if not exists"
+    table_opts: Arc<str>,    // stuff to add at the end of the statement
 }
 
 impl SqlCreateSchema {
-
     #[cfg(test)]
     pub fn new(
-        table_name: Rc<str>,
+        table_name: Arc<str>,
         col_defs: Vec<SqlCreateCol>,
-        pre_name_opts: Rc<str>, // "if not exists"
-        table_opts: Rc<str>,    // stuff to add at the end of the statement
+        pre_name_opts: Arc<str>, // "if not exists"
+        table_opts: Arc<str>,    // stuff to add at the end of the statement
     ) -> Self {
         Self {
             table_name,
@@ -76,10 +74,10 @@ impl SqlCreateSchema {
             .map(|&x| SqlCreateCol::from_parser_col_def(x))
             .collect();
         Self {
-            table_name: Rc::from(schema.name()),
+            table_name: Arc::from(schema.name()),
             col_defs,
-            pre_name_opts: Rc::from(""),
-            table_opts: Rc::from(""),
+            pre_name_opts: Arc::from(""),
+            table_opts: Arc::from(""),
         }
     }
 
@@ -123,26 +121,30 @@ impl SqlCreateSchema {
 #[cfg(test)]
 mod test {
     use crate::sqlgen::sql_create::{SqlCreateCol, SqlCreateSchema};
-    use std::rc::Rc;
+    use std::sync::Arc;
 
     #[test]
     fn test_sql_create_schema() {
         let cols = vec![
             SqlCreateCol::new(
-                Rc::from("timestamp"),
-                Rc::from("TIMESTAMP"),
-                Rc::from("NOT NULL"),
+                Arc::from("timestamp"),
+                Arc::from("TIMESTAMP"),
+                Arc::from("NOT NULL"),
             ),
             SqlCreateCol::new(
-                Rc::from("logsource"),
-                Rc::from("VARCHAR(255)"),
-                Rc::from(""),
+                Arc::from("logsource"),
+                Arc::from("VARCHAR(255)"),
+                Arc::from(""),
             ),
-            SqlCreateCol::new(Rc::from("progname"), Rc::from("VARCHAR(40)"), Rc::from("")),
-            SqlCreateCol::new(Rc::from("pid"), Rc::from("INT"), Rc::from("")),
-            SqlCreateCol::new(Rc::from("message"), Rc::from("TEXT"), Rc::from("")),
+            SqlCreateCol::new(
+                Arc::from("progname"),
+                Arc::from("VARCHAR(40)"),
+                Arc::from(""),
+            ),
+            SqlCreateCol::new(Arc::from("pid"), Arc::from("INT"), Arc::from("")),
+            SqlCreateCol::new(Arc::from("message"), Arc::from("TEXT"), Arc::from("")),
         ];
-        let sc = SqlCreateSchema::new(Rc::from("syslog"), cols, Rc::from(""), Rc::from(""));
+        let sc = SqlCreateSchema::new(Arc::from("syslog"), cols, Arc::from(""), Arc::from(""));
 
         println!("RESULT:\n{}", sc.get_create_sql())
     }

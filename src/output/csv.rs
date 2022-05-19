@@ -1,8 +1,8 @@
+use crate::output::format::OutputSink;
+use crate::query_processor::QlRow;
+use crate::{ParserSchema, QlSchema};
 use std::error::Error;
 use std::io::Write;
-use crate::output::format::OutputSink;
-use crate::{ParserSchema, QlSchema};
-use crate::query_processor::QlRow;
 
 pub struct CsvOutput {
     schema: QlSchema,
@@ -18,17 +18,19 @@ impl CsvOutput {
             add_header,
         }
     }
-
 }
 
 impl OutputSink for CsvOutput {
     fn output_header(&mut self) -> Result<(), Box<dyn Error>> {
         if !self.add_header {
-            return Ok(())
+            return Ok(());
         }
-        let o = self.schema.col_defs().iter().map(|&x|{
-            x.name().as_bytes()
-        }).collect::<Vec<_>>();
+        let o = self
+            .schema
+            .col_defs()
+            .iter()
+            .map(|&x| x.name().as_bytes())
+            .collect::<Vec<_>>();
         let ret = self.wr.write_record(o);
         if ret.is_ok() {
             Ok(())

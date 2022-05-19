@@ -1,11 +1,12 @@
+use crate::conf::external::ExternalConfig;
+use crate::syslog_server::SyslogServerConfig;
+use crate::{str2type, ConfigError, GrokColumnDef, GrokSchema, MyArgs};
 use std::error::Error;
 use std::fs;
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
-use std::rc::Rc;
-use crate::{ConfigError, GrokColumnDef, GrokSchema, MyArgs, str2type};
-use crate::conf::external::ExternalConfig;
+use std::sync::Arc;
 
-macro_rules! args_or_external_vec{
+macro_rules! args_or_external_vec {
     ($a:expr,$b:expr, $prop:ident, $err: expr) => {
         if $a.$prop.is_empty() {
             if $b.$prop.is_some() {
@@ -16,7 +17,6 @@ macro_rules! args_or_external_vec{
                 } else {
                     Ok(ret_ref)
                 }
-
             } else {
                 let my_err: Box<dyn Error> = Box::new(ConfigError::new($err));
                 Err(my_err)
@@ -24,10 +24,10 @@ macro_rules! args_or_external_vec{
         } else {
             Ok(&$a.$prop)
         }
-    }
+    };
 }
 
-macro_rules! args_or_external_opt{
+macro_rules! args_or_external_opt {
     ($a:expr,$b:expr, $prop:ident, $err: expr) => {
         if $a.$prop.is_some() {
             Ok($a.$prop.as_ref().unwrap())
@@ -39,10 +39,10 @@ macro_rules! args_or_external_opt{
                 Err(my_err)
             }
         }
-    }
+    };
 }
 
-macro_rules! args_or_external_vec_default{
+macro_rules! args_or_external_vec_default {
     ($a:expr,$b:expr, $prop:ident, $def: expr) => {
         if $a.$prop.is_empty() {
             if $b.$prop.is_some() {
@@ -58,10 +58,10 @@ macro_rules! args_or_external_vec_default{
         } else {
             &$a.$prop
         }
-    }
+    };
 }
 
-macro_rules! args_or_external_opt_default{
+macro_rules! args_or_external_opt_default {
     ($a:expr,$b:expr, $prop:ident, $def: expr) => {
         if $a.$prop.is_some() {
             $a.$prop.as_ref().unwrap()
@@ -72,10 +72,10 @@ macro_rules! args_or_external_opt_default{
                 $def
             }
         }
-    }
+    };
 }
 
-macro_rules! args_or_external_bool_default{
+macro_rules! args_or_external_bool_default {
     ($a:expr,$b:expr, $prop:ident, $def: expr) => {
         if $a.$prop {
             $a.$prop
@@ -86,7 +86,7 @@ macro_rules! args_or_external_bool_default{
                 $def
             }
         }
-    }
+    };
 }
 
 pub enum OutputFormat {
@@ -94,6 +94,7 @@ pub enum OutputFormat {
     SQL,
 }
 
+#[derive(Debug, Clone)]
 pub struct HustlogConfig {
     input: String,
     merge_multi_line: bool,
@@ -108,22 +109,25 @@ pub struct HustlogConfig {
 }
 
 impl HustlogConfig {
-    pub fn new(args: MyArgs) -> Result<HustlogConfig,Box<dyn Error>> {
+    pub fn new(args: MyArgs) -> Result<HustlogConfig, Box<dyn Error>> {
         let external_conf = args.get_external_conf()?;
         let schema = Self::parse_grok_schema(&args, &external_conf)?;
         let input = args_or_external_opt_default!(&args, &external_conf, input, "-");
-        let merge_multi_line = args_or_external_bool_default!(&args, &external_conf, merge_multi_line, false);
+        let merge_multi_line =
+            args_or_external_bool_default!(&args, &external_conf, merge_multi_line, false);
         let query_str_ref = args_or_external_opt_default!(&args, &external_conf, query, "");
-        let query_str: Option<String> = if query_str_ref  == "" {
+        let query_str: Option<String> = if query_str_ref == "" {
             None
         } else {
             Some(query_str_ref.to_string())
         };
         let output = args_or_external_opt_default!(&args, &external_conf, output, "-");
         let output_format = args_or_external_opt_default!(&args, &external_conf, output, "csv");
-        let output_batch_size = args_or_external_opt_default!(&args, &external_conf, output_batch_size, &1000);
-        let output_add_ddl = args_or_external_bool_default!(&args, &external_conf, output_add_ddl, false);
-        Ok(Self{
+        let output_batch_size =
+            args_or_external_opt_default!(&args, &external_conf, output_batch_size, &1000);
+        let output_add_ddl =
+            args_or_external_bool_default!(&args, &external_conf, output_add_ddl, false);
+        Ok(Self {
             input: input.to_string(),
             merge_multi_line: merge_multi_line,
             grok_schema: schema,
@@ -135,9 +139,16 @@ impl HustlogConfig {
         })
     }
 
-    fn parse_col_defs(args: &MyArgs, external_conf: &ExternalConfig) -> Result<Vec<GrokColumnDef>, Box<dyn Error>> {
-        let schema_columns = args_or_external_vec!(&args, &external_conf,
-            grok_schema_columns, "At least one grok schema column is required")?;
+    fn parse_col_defs(
+        args: &MyArgs,
+        external_conf: &ExternalConfig,
+    ) -> Result<Vec<GrokColumnDef>, Box<dyn Error>> {
+        let schema_columns = args_or_external_vec!(
+            &args,
+            &external_conf,
+            grok_schema_columns,
+            "At least one grok schema column is required"
+        )?;
         let grok_schema_cols: Vec<_> = schema_columns
             .iter()
             .map(|x| {
@@ -148,11 +159,11 @@ impl HustlogConfig {
                 } else {
                     (lookup_names_csv, false)
                 };
-                let lookup_names: Vec<Rc<String>> = lookup_names_csv
+                let lookup_names: Vec<Arc<String>> = lookup_names_csv
                     .split(',')
                     .into_iter()
                     .filter(|&x| !x.is_empty())
-                    .map(|x| Rc::new(x.to_string()))
+                    .map(|x| Arc::new(x.to_string()))
                     .collect();
                 if lookup_names.is_empty() {
                     Err(Box::new(ConfigError::new("Empty lookup names")))
@@ -164,7 +175,7 @@ impl HustlogConfig {
                     } else {
                         let col_name = lookup_names.first().unwrap().clone();
                         Ok(GrokColumnDef::new(
-                            Rc::from(col_name.as_str()),
+                            Arc::from(col_name.as_str()),
                             col_type.unwrap(),
                             lookup_names,
                             required,
@@ -184,13 +195,20 @@ impl HustlogConfig {
         Ok(grok_schema_cols)
     }
 
-    fn parse_grok_schema(args: &MyArgs, external_conf: &ExternalConfig) -> Result<GrokSchema, Box<dyn Error>> {
-        let pattern = args_or_external_opt!(&args, &external_conf, grok_pattern,
-            "GROK pattern is required")?;
+    fn parse_grok_schema(
+        args: &MyArgs,
+        external_conf: &ExternalConfig,
+    ) -> Result<GrokSchema, Box<dyn Error>> {
+        let pattern = args_or_external_opt!(
+            &args,
+            &external_conf,
+            grok_pattern,
+            "GROK pattern is required"
+        )?;
         let grok_schema_cols: Vec<GrokColumnDef> = Self::parse_col_defs(&args, &external_conf)?;
         let empty_vec = Vec::new();
-        let grok_extra_patterns = args_or_external_vec_default!(&args, &external_conf,
-            grok_extra_patterns, &empty_vec);
+        let grok_extra_patterns =
+            args_or_external_vec_default!(&args, &external_conf, grok_extra_patterns, &empty_vec);
         let extra_patterns: Vec<(String, String)> = grok_extra_patterns
             .iter()
             .map(|x| {
@@ -200,10 +218,14 @@ impl HustlogConfig {
                 (first, second)
             })
             .collect();
-        let grok_ignore_default_patterns = args_or_external_bool_default!(&args, &external_conf, grok_ignore_default_patterns,
-            false);
-        let grok_with_alias_only = args_or_external_bool_default!(&args, &external_conf, grok_with_alias_only,
-            false);
+        let grok_ignore_default_patterns = args_or_external_bool_default!(
+            &args,
+            &external_conf,
+            grok_ignore_default_patterns,
+            false
+        );
+        let grok_with_alias_only =
+            args_or_external_bool_default!(&args, &external_conf, grok_with_alias_only, false);
         Ok(GrokSchema::new(
             pattern.clone(),
             grok_schema_cols,
@@ -261,20 +283,94 @@ impl HustlogConfig {
     pub fn output_batch_size(&self) -> usize {
         self.output_batch_size
     }
+
+    pub fn input_is_syslog_server(&self) -> bool {
+        self.input.starts_with("syslog-tcp:") || self.input.starts_with("syslog-udp:")
+    }
+
+    pub fn get_syslog_server_config(&self) -> Result<SyslogServerConfig, ConfigError> {
+        if !self.input_is_syslog_server() {
+            return Err(ConfigError::new("Invalid input param for syslog server"));
+            // should never happen ...
+        }
+        let spl = self.input.split(":").collect::<Vec<_>>();
+        if spl.len() < 3 {
+            return Err(ConfigError::new(
+                "server configuration requires at least 3 tokens separated by : ",
+            ));
+        }
+        let proto = spl[0]
+            .strip_prefix("syslog-")
+            .ok_or(ConfigError::new(
+                "Invalid proto for syslog server, must start with syslog-",
+            ))?
+            .to_string();
+        let listen_host = spl[1..spl.len() - 1].join(":");
+        let port = spl.last().unwrap();
+        let port = match port.parse::<u32>() {
+            Ok(x) => Ok(x),
+            Err(pi) => Err(ConfigError::new(pi.to_string().as_str())),
+        }?;
+        Ok(SyslogServerConfig {
+            proto: proto,
+            listen_host: listen_host,
+            port: port,
+        })
+    }
 }
 
+#[cfg(test)]
+mod tests {
+    use crate::{HustlogConfig, MyArgs};
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//
-//     #[test]
-//     fn parse_col_defs_works() {
-//         let parsed = HustlogConfig::parse_col_defs(&vec![
-//             "timestamp:ts:%b %e %H:%M:%S".to_string(),
-//             "message".to_string(),
-//         ])
-//             .unwrap();
-//         println!("{:?}", parsed)
-//     }
-// }
+    pub fn test_args(input: &str) -> MyArgs {
+        MyArgs {
+            grok_list_default_patterns: false,
+            conf: None,
+            input: Some(input.to_string()),
+            output: None,
+            output_format: None,
+            output_batch_size: None,
+            output_add_ddl: false,
+            grok_pattern: Some("SYSLOGLINE".to_string()),
+            grok_patterns_file: None,
+            grok_extra_patterns: vec![],
+            query: None,
+            grok_with_alias_only: false,
+            grok_ignore_default_patterns: false,
+            grok_schema_columns: vec![
+                "+timestamp:ts:%b %e %H:%M:%S".to_string(),
+                "logsource".to_string(),
+                "program".to_string(),
+                "pid:int".to_string(),
+                "message".to_string(),
+            ],
+            merge_multi_line: false,
+        }
+    }
+
+    pub fn test_config(input: &str) -> HustlogConfig {
+        let args = test_args(input);
+        HustlogConfig::new(args).unwrap()
+    }
+
+    #[test]
+    fn new_works() {
+        let hc = test_config("-");
+        println!("{:?}", hc)
+    }
+
+    #[test]
+    fn parse_server_conf_works() {
+        let hc = test_config("syslog-tcp:127.0.0.1:514");
+        let ssc = hc.get_syslog_server_config().unwrap();
+        assert_eq!(ssc.proto, "tcp");
+        assert_eq!(ssc.listen_host, "127.0.0.1");
+        assert_eq!(ssc.port, 514);
+        let hc = test_config("syslog-udp::::1:514");
+        let ssc = hc.get_syslog_server_config().unwrap();
+        assert_eq!(ssc.proto, "udp");
+        assert_eq!(ssc.listen_host, ":::1");
+        assert_eq!(ssc.port, 514);
+    }
+}

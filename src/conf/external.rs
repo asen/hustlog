@@ -1,7 +1,7 @@
+use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fs;
 use std::io::BufReader;
-use serde::{Serialize, Deserialize};
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct ExternalConfig {
@@ -25,10 +25,9 @@ pub struct ExternalConfig {
 }
 
 impl ExternalConfig {
-    pub fn from_yaml_file(fname: &str) -> Result<ExternalConfig,Box<dyn Error>> {
+    pub fn from_yaml_file(fname: &str) -> Result<ExternalConfig, Box<dyn Error>> {
         let rdr = BufReader::new(fs::File::open(fname)?);
-        match serde_yaml::from_reader(rdr)
-        {
+        match serde_yaml::from_reader(rdr) {
             Ok(pc) => Ok(pc),
             Err(e) => Err(Box::new(e)),
         }
@@ -49,15 +48,15 @@ impl ExternalConfig {
             output: None,
             output_format: None,
             output_batch_size: None,
-            output_add_ddl: None
+            output_add_ddl: None,
         }
     }
 }
 
 #[cfg(test)]
 mod test {
-    use std::path::PathBuf;
     use crate::conf::external::ExternalConfig;
+    use std::path::PathBuf;
 
     #[test]
     fn test_empty_deser() {
@@ -78,8 +77,7 @@ mod test {
         let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         d.push("config_examples/syslog.yaml");
 
-        let pc = ExternalConfig::from_yaml_file(
-            d.to_str().unwrap()).unwrap();
+        let pc = ExternalConfig::from_yaml_file(d.to_str().unwrap()).unwrap();
         println!("{:?}", pc)
     }
 }

@@ -11,7 +11,7 @@ use std::cmp::{min, Ordering};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::error::Error;
-use std::rc::Rc;
+use std::sync::Arc;
 
 pub trait QlInputTable {
     fn read_row(&mut self) -> Result<Option<QlRow>, Box<dyn Error>>;
@@ -36,12 +36,8 @@ pub struct ParserIteratorInputTable {
 }
 
 impl ParserIteratorInputTable {
-    pub fn new(pit: ParserIterator,
-               ql_schema: QlSchema) -> Self {
-        Self {
-            pit,
-            ql_schema
-        }
+    pub fn new(pit: ParserIterator, ql_schema: QlSchema) -> Self {
+        Self { pit, ql_schema }
     }
 }
 
@@ -49,16 +45,18 @@ impl QlInputTable for ParserIteratorInputTable {
     fn read_row(&mut self) -> Result<Option<QlRow>, Box<dyn Error>> {
         let pm = self.pit.next();
         if pm.is_none() {
-            return Ok(None)
+            return Ok(None);
         }
-        Ok(Some(QlRow::from_parsed_message(pm.unwrap(), &self.ql_schema)))
+        Ok(Some(QlRow::from_parsed_message(
+            pm.unwrap(),
+            &self.ql_schema,
+        )))
     }
 
     fn ql_schema(&self) -> &QlSchema {
         &self.ql_schema
     }
 }
-
 
 pub struct QlMemTable {
     schema: QlSchema,
@@ -193,12 +191,12 @@ impl QlInputTable for QlParserIteratorInputTable<'_> {
 }
 
 #[derive(Eq, Hash, PartialEq, Debug)]
-struct QlGroupByKey(Vec<(Rc<str>, ParsedValue)>);
+struct QlGroupByKey(Vec<(Arc<str>, ParsedValue)>);
 
 struct QlGroupByContext {
     //gb_key_ixes: Vec<usize>,
-    by_gb_key: HashMap<Rc<QlGroupByKey>, Vec<Box<dyn AggExpr>>>,
-    keys_ordered: Vec<Rc<QlGroupByKey>>,
+    by_gb_key: HashMap<Arc<QlGroupByKey>, Vec<Box<dyn AggExpr>>>,
+    keys_ordered: Vec<Arc<QlGroupByKey>>,
 }
 
 impl QlGroupByContext {
@@ -218,7 +216,7 @@ impl QlGroupByContext {
         ctx: &QlRowContext,
         dctx: &mut LazyContext,
     ) -> Result<(), QueryError> {
-        let gb_key_ref = Rc::new(gb_key);
+        let gb_key_ref = Arc::new(gb_key);
         let en = self.by_gb_key.entry(gb_key_ref.clone());
         let mut exists = true;
         let agg_exprs: &mut Vec<Box<dyn AggExpr>> = match en {
@@ -335,8 +333,8 @@ fn eval_lazy_ctxs(
     select_c: &QlSelectCols,
     static_ctx: &QlRowContext,
     lazy_ctx: &mut LazyContext,
-) -> Result<Vec<(Rc<str>, ParsedValue)>, QueryError> {
-    let mut outp_vals: Vec<(Rc<str>, ParsedValue)> = Vec::new();
+) -> Result<Vec<(Arc<str>, ParsedValue)>, QueryError> {
+    let mut outp_vals: Vec<(Arc<str>, ParsedValue)> = Vec::new();
     let lazy_exp_vec = select_c.lazy_exprs();
     for le in lazy_exp_vec {
         let pv = lazy_ctx
@@ -391,7 +389,6 @@ pub fn eval_query(
                 } else {
                     let orow = QlRow::new(raw, outp_vals);
                     if !out_schema_set {
-
                         out_schema_set = true
                     }
                     outp.write_row(orow)?;
@@ -563,7 +560,7 @@ mod test {
             }
         } else {
             println!("ERROR: {:?}", res);
-            return Err(res.err().unwrap())
+            return Err(res.err().unwrap());
         }
         Ok(Box::new(rrt))
     }

@@ -8,6 +8,7 @@ use std::hash::{Hash, Hasher};
 use std::io;
 use std::io::Write;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use chrono::Datelike;
 use chrono::{DateTime, FixedOffset, Local, NaiveDateTime, Offset, TimeZone};
@@ -50,7 +51,12 @@ impl LogParseError {
 
 impl fmt::Display for LogParseError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Log parse error: {} RAW: {}", self.get_desc(), self.get_raw().as_str())
+        write!(
+            f,
+            "Log parse error: {} RAW: {}",
+            self.get_desc(),
+            self.get_raw().as_str()
+        )
     }
 }
 
@@ -210,7 +216,7 @@ impl ParsedValue {
     }
 }
 
-#[derive(Clone, Debug,PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct TimeTypeFormat {
     format_specifier: Box<String>,
     needs_year: bool,
@@ -328,10 +334,10 @@ pub fn str2type(s: &str) -> Option<ParsedValueType> {
 }
 
 #[derive(Debug)]
-pub struct ParsedData(HashMap<Rc<str>, ParsedValue>);
+pub struct ParsedData(HashMap<Arc<str>, ParsedValue>);
 
 impl ParsedData {
-    pub fn new(hm: HashMap<Rc<str>, ParsedValue>) -> ParsedData {
+    pub fn new(hm: HashMap<Arc<str>, ParsedValue>) -> ParsedData {
         ParsedData(hm)
     }
 
@@ -402,7 +408,7 @@ impl LineMerger for SpaceLineMerger {
             self.buf.push(line);
             return None;
         }
-        if line.starts_with(' ') || line.starts_with('\t') {
+        if line.starts_with(" ") || line.starts_with("\t") {
             // line continuation
             self.buf.push(line);
             return None;
@@ -604,15 +610,15 @@ mod tests {
             String::from("SYSLOGLINE"),
             vec![
                 GrokColumnDef::new(
-                    Rc::from("timestamp"),
+                    Arc::from("timestamp"),
                     ParsedValueType::TimeType(TimeTypeFormat::new("%b %e %H:%M:%S")),
-                    vec![Rc::new(String::from("timestamp"))],
+                    vec![Arc::new(String::from("timestamp"))],
                     true,
                 ),
                 GrokColumnDef::new(
-                    Rc::from("message"),
+                    Arc::from("message"),
                     ParsedValueType::StrType,
-                    vec![Rc::new(String::from("message"))],
+                    vec![Arc::new(String::from("message"))],
                     true,
                 ),
             ],

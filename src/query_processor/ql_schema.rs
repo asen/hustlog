@@ -1,12 +1,18 @@
 use crate::query_processor::ql_agg_expr::{get_agg_expr, AggExpr};
-use crate::query_processor::ql_eval_expr::{object_name_to_string, LazyContext, LazyExpr, eval_expr_type};
+use crate::query_processor::ql_eval_expr::{
+    eval_expr_type, object_name_to_string, LazyContext, LazyExpr,
+};
 use crate::query_processor::SqlSelectQuery;
-use crate::{GrokColumnDef, GrokSchema, ParsedMessage, ParsedValue, ParsedValueType, ParserColDef, ParserSchema, RawMessage};
+use crate::{
+    GrokColumnDef, GrokSchema, ParsedMessage, ParsedValue, ParsedValueType, ParserColDef,
+    ParserSchema, RawMessage,
+};
 use sqlparser::ast::{BinaryOperator, Expr, SelectItem};
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt;
 use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(PartialEq, Eq, Hash, Debug, Clone)]
 pub struct QueryError(String);
@@ -53,7 +59,6 @@ pub struct QlColDef {
 }
 
 impl QlColDef {
-
     pub fn new(name: &str, pv_type: ParsedValueType) -> Self {
         Self {
             pcd: ParserColDef::new(name, &pv_type),
@@ -66,7 +71,7 @@ impl QlColDef {
         }
     }
 
-    pub fn name(&self) -> &Rc<str> {
+    pub fn name(&self) -> &Arc<str> {
         &self.pcd.name()
     }
 
@@ -83,10 +88,7 @@ pub struct QlSchema {
 
 impl QlSchema {
     pub fn new(name: Rc<str>, cols: Vec<QlColDef>) -> Self {
-        Self {
-            name,
-            cols
-        }
+        Self { name, cols }
     }
     pub fn from(gs: &GrokSchema) -> QlSchema {
         let cols = gs
@@ -96,7 +98,7 @@ impl QlSchema {
             .collect::<Vec<_>>();
         Self {
             name: Rc::from(gs.name()),
-            cols
+            cols,
         }
     }
 }
@@ -107,20 +109,18 @@ impl ParserSchema for QlSchema {
     }
 
     fn col_defs(&self) -> Vec<&ParserColDef> {
-        self.cols.iter().map(|cd| {
-            cd.get_pcd()
-        }).collect()
+        self.cols.iter().map(|cd| cd.get_pcd()).collect()
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct QlRow {
     raw: Option<RawMessage>,
-    data: Vec<(Rc<str>, ParsedValue)>,
+    data: Vec<(Arc<str>, ParsedValue)>,
 }
 
 impl QlRow {
-    pub fn new(raw: Option<RawMessage>, data: Vec<(Rc<str>, ParsedValue)>) -> Self {
+    pub fn new(raw: Option<RawMessage>, data: Vec<(Arc<str>, ParsedValue)>) -> Self {
         Self { raw, data }
     }
 
@@ -149,25 +149,26 @@ impl QlRow {
         &self.raw
     }
 
-    pub fn data(&self) -> &Vec<(Rc<str>, ParsedValue)> {
+    pub fn data(&self) -> &Vec<(Arc<str>, ParsedValue)> {
         &self.data
     }
 
     pub fn data_as_strs(&self) -> Vec<Rc<str>> {
-        self.data().iter().map(|x|{
-            x.1.to_rc_str()
-        }).collect::<Vec<_>>()
+        self.data()
+            .iter()
+            .map(|x| x.1.to_rc_str())
+            .collect::<Vec<_>>()
     }
 }
 
 pub struct QlRowContext<'a> {
     row: Option<&'a QlRow>,
-    lookup_map: HashMap<Rc<str>, &'a ParsedValue>,
+    lookup_map: HashMap<Arc<str>, &'a ParsedValue>,
 }
 
 impl<'a> QlRowContext<'a> {
     pub fn from_row(row: &'a QlRow) -> QlRowContext {
-        let mut lookup_map: HashMap<Rc<str>, &ParsedValue> = HashMap::new();
+        let mut lookup_map: HashMap<Arc<str>, &ParsedValue> = HashMap::new();
         for (k, v) in &row.data {
             lookup_map.insert(k.clone(), v);
         }
@@ -309,28 +310,29 @@ impl QlSelectCols {
         &self.cols
     }
 
-    pub fn to_out_schema(&self, inp_schema: &QlSchema) -> Result<QlSchema,QueryError> {
-        let ctx = inp_schema.cols.iter().map(|qcd| {
-            (qcd.name().clone(), qcd.pcd.pv_type().clone())
-        }).collect::<HashMap<Rc<str>,ParsedValueType>>();
-        let cols = self.cols.iter().map(|cd|{
-            let nt = match cd {
-                QlSelectItem::RawMessage => {
-                    ("_raw",
-                    Ok(ParsedValueType::StrType))
-                }
-                QlSelectItem::LazyExpr(x) => {
-                    (x.name().as_ref(), eval_expr_type(x.expr(), &ctx))
-                }
-                QlSelectItem::AggExpr(ax) => {
-                    (ax.name().as_ref(), ax.result_type(&ctx))
-                }
-            };
+    pub fn to_out_schema(&self, inp_schema: &QlSchema) -> Result<QlSchema, QueryError> {
+        let ctx = inp_schema
+            .cols
+            .iter()
+            .map(|qcd| (qcd.name().clone(), qcd.pcd.pv_type().clone()))
+            .collect::<HashMap<Arc<str>, ParsedValueType>>();
+        let cols = self
+            .cols
+            .iter()
+            .map(|cd| {
+                let nt = match cd {
+                    QlSelectItem::RawMessage => ("_raw", Ok(ParsedValueType::StrType)),
+                    QlSelectItem::LazyExpr(x) => {
+                        (x.name().as_ref(), eval_expr_type(x.expr(), &ctx))
+                    }
+                    QlSelectItem::AggExpr(ax) => (ax.name().as_ref(), ax.result_type(&ctx)),
+                };
 
-            (nt.0, nt.1)
-        }).collect::<Vec<_>>();
+                (nt.0, nt.1)
+            })
+            .collect::<Vec<_>>();
         let mut my_cols = Vec::new();
-        for (k,v) in cols {
+        for (k, v) in cols {
             let col = QlColDef::new(k, v?);
             my_cols.push(col)
         }
@@ -338,8 +340,8 @@ impl QlSelectCols {
     }
 }
 
-fn get_res_col(name: &str, expr: &Expr) -> (Rc<str>, QlSelectItem) {
-    let my_name: Rc<str> = Rc::from(name);
+fn get_res_col(name: &str, expr: &Expr) -> (Arc<str>, QlSelectItem) {
+    let my_name = Arc::from(name);
     let agg = get_agg_expr(&my_name, expr);
     match agg {
         Ok(opt) => match opt {
@@ -372,7 +374,7 @@ pub fn get_res_cols(_schema: &GrokSchema, qry: &SqlSelectQuery) -> Vec<QlSelectI
                 vec![t.1]
             }
             SelectItem::QualifiedWildcard(wc) => {
-                let my_name: Rc<str> = Rc::from(object_name_to_string(wc).as_str());
+                let my_name: Arc<str> = Arc::from(object_name_to_string(wc).as_str());
                 vec![
                     //(
                     //my_name.clone(),

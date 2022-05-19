@@ -1,11 +1,14 @@
 use std::collections::HashMap;
 use std::ops::{Add, Div, Mul, Rem, Sub};
 use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::query_processor::ql_schema::QlRowContext;
 use crate::query_processor::QueryError;
 use crate::{str2val, ParsedValue, ParsedValueType, TimeTypeFormat};
-use sqlparser::ast::{BinaryOperator, Expr, Function, FunctionArg, FunctionArgExpr, ObjectName, UnaryOperator, Value};
+use sqlparser::ast::{
+    BinaryOperator, Expr, Function, FunctionArg, FunctionArgExpr, ObjectName, UnaryOperator, Value,
+};
 
 // pub struct StaticCtx<'a> {
 //     pd: Option<&'a ParsedData>,
@@ -32,13 +35,13 @@ use sqlparser::ast::{BinaryOperator, Expr, Function, FunctionArg, FunctionArgExp
 
 #[derive(PartialEq, Eq, Hash)]
 pub struct LazyExpr {
-    name: Rc<str>,
+    name: Arc<str>,
     expr: Expr,
     res: Option<Result<Option<ParsedValue>, QueryError>>,
 }
 
 impl LazyExpr {
-    pub fn new(name: Rc<str>, expr: &Expr) -> LazyExpr {
+    pub fn new(name: Arc<str>, expr: &Expr) -> LazyExpr {
         Self {
             name: name.clone(),
             expr: expr.clone(),
@@ -46,7 +49,7 @@ impl LazyExpr {
         }
     }
 
-    pub fn err(name: Rc<str>, qerr: QueryError) -> LazyExpr {
+    pub fn err(name: Arc<str>, qerr: QueryError) -> LazyExpr {
         Self {
             name: name.clone(),
             expr: Expr::Value(Value::Null),
@@ -66,17 +69,17 @@ impl LazyExpr {
         &self.expr
     }
 
-    pub fn name(&self) -> &Rc<str> {
+    pub fn name(&self) -> &Arc<str> {
         &self.name
     }
 }
 
 pub struct LazyContext {
-    hm: HashMap<Rc<str>, LazyExpr>,
+    hm: HashMap<Arc<str>, LazyExpr>,
 }
 
 impl LazyContext {
-    pub fn new(hm: HashMap<Rc<str>, LazyExpr>) -> Self {
+    pub fn new(hm: HashMap<Arc<str>, LazyExpr>) -> Self {
         Self { hm }
     }
 
@@ -109,7 +112,7 @@ impl LazyContext {
             Err(x) => Err(x),
         };
         lex.res = Some(ret.clone());
-        self.hm.insert(Rc::from(key), lex);
+        self.hm.insert(Arc::from(key), lex);
         return ret;
     }
 }
@@ -180,7 +183,9 @@ fn func_arg_to_pv(
     }
 }
 
-fn date_function_format<'a>(args_iter: &mut impl Iterator<Item=&'a FunctionArg>) -> Result<TimeTypeFormat, QueryError>{
+fn date_function_format<'a>(
+    args_iter: &mut impl Iterator<Item = &'a FunctionArg>,
+) -> Result<TimeTypeFormat, QueryError> {
     let cur_arg: &FunctionArg = args_iter
         .next()
         .ok_or(QueryError::new("DATE function requires arguments"))?;
@@ -188,21 +193,23 @@ fn date_function_format<'a>(args_iter: &mut impl Iterator<Item=&'a FunctionArg>)
         if let FunctionArgExpr::Expr(xp) = fax {
             if let Expr::Value(v) = xp {
                 match v {
-                    Value::SingleQuotedString(s) => {
-                        Ok(s.to_string())
-                    }
-                    Value::DoubleQuotedString(s) => {
-                        Ok(s.to_string())
-                    }
-                    _ => Err(QueryError::new(format!("Date format must be a quoted string: v={:?}", v).as_str()))
+                    Value::SingleQuotedString(s) => Ok(s.to_string()),
+                    Value::DoubleQuotedString(s) => Ok(s.to_string()),
+                    _ => Err(QueryError::new(
+                        format!("Date format must be a quoted string: v={:?}", v).as_str(),
+                    )),
                 }
             } else if let Expr::Identifier(id) = xp {
                 Ok(id.value.clone())
             } else {
-                Err(QueryError::new(format!("Date format must be a quoted string: fax={:?}", fax).as_str()))
+                Err(QueryError::new(
+                    format!("Date format must be a quoted string: fax={:?}", fax).as_str(),
+                ))
             }
         } else {
-            Err(QueryError::new(format!("Date format must be a quoted string: cur_arg={:?}", cur_arg).as_str()))
+            Err(QueryError::new(
+                format!("Date format must be a quoted string: cur_arg={:?}", cur_arg).as_str(),
+            ))
         }
     } else {
         Err(QueryError::new("Date format must be a quoted string"))
@@ -258,14 +265,14 @@ fn eval_function(
 
 fn eval_function_type(
     fun: &Function,
-    _ctx: &HashMap<Rc<str>,ParsedValueType>,
+    _ctx: &HashMap<Arc<str>, ParsedValueType>,
 ) -> Result<ParsedValueType, QueryError> {
     let fun_name = object_name_to_string(&fun.name);
     match fun_name.as_str() {
         "DATE" => {
             let tfmt = date_function_format(&mut fun.args.iter())?;
             Ok(ParsedValueType::TimeType(tfmt))
-        },
+        }
         _ => Err(QueryError::not_supported(&format!("Function: {:?}", fun))),
     }
 }
@@ -478,10 +485,9 @@ pub fn eval_expr(
     }
 }
 
-
 pub fn eval_expr_type(
     expr: &Expr,
-    ctx: &HashMap<Rc<str>,ParsedValueType>,
+    ctx: &HashMap<Arc<str>, ParsedValueType>,
 ) -> Result<ParsedValueType, QueryError> {
     match expr {
         Expr::Identifier(x) => {
@@ -493,13 +499,14 @@ pub fn eval_expr_type(
                     Ok(val.clone())
                 } else {
                     Err(QueryError::new(
-                        format!("Can not determine expression type: {}",&x.value).as_str()))
+                        format!("Can not determine expression type: {}", &x.value).as_str(),
+                    ))
                 }
             }
         }
         Expr::CompoundIdentifier(_) => Err(QueryError::not_impl("Expr::CompoundIdentifier")),
-        Expr::IsNull(_x) => { Ok(ParsedValueType::BoolType) }
-        Expr::IsNotNull(_x) => { Ok(ParsedValueType::BoolType) }
+        Expr::IsNull(_x) => Ok(ParsedValueType::BoolType),
+        Expr::IsNotNull(_x) => Ok(ParsedValueType::BoolType),
         Expr::IsDistinctFrom(_, _) => Err(QueryError::not_impl("Expr::IsDistinctFrom")),
         Expr::IsNotDistinctFrom(_, _) => Err(QueryError::not_impl("Expr::IsNotDistinctFrom")),
         Expr::InList { .. } => Err(QueryError::not_impl("Expr::InList")),
@@ -522,7 +529,7 @@ pub fn eval_expr_type(
                 BinaryOperator::Multiply => arithmetic_op_type(&op),
                 BinaryOperator::Divide => arithmetic_op_type(&op),
                 BinaryOperator::Modulo => arithmetic_op_type(&op),
-                BinaryOperator::StringConcat => { Ok(ParsedValueType::StrType) }
+                BinaryOperator::StringConcat => Ok(ParsedValueType::StrType),
                 BinaryOperator::Gt => Ok(ParsedValueType::BoolType),
                 BinaryOperator::Lt => Ok(ParsedValueType::BoolType),
                 BinaryOperator::GtEq => Ok(ParsedValueType::BoolType),
@@ -618,9 +625,7 @@ pub fn eval_expr_type(
                     Err(QueryError::not_impl("Value::NationalStringLiteral"))
                 }
                 Value::HexStringLiteral(_) => Err(QueryError::not_impl("Value::HexStringLiteral")),
-                Value::DoubleQuotedString(_x) => {
-                    Ok(ParsedValueType::StrType)
-                }
+                Value::DoubleQuotedString(_x) => Ok(ParsedValueType::StrType),
                 Value::Boolean(_b) => Ok(ParsedValueType::BoolType),
                 Value::Interval { .. } => Err(QueryError::not_impl("Value::Interval")),
                 Value::Null => Ok(ParsedValueType::NullType),

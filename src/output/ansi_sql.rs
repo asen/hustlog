@@ -1,9 +1,9 @@
-use std::error::Error;
-use std::io::Write;
-use crate::{QlSchema, SqlCreateSchema};
 use crate::output::format::OutputSink;
 use crate::query_processor::QlRow;
 use crate::sqlgen::BatchedInserts;
+use crate::{QlSchema, SqlCreateSchema};
+use std::error::Error;
+use std::io::Write;
 
 pub struct AnsiSqlOutput {
     ddl: Option<SqlCreateSchema>,
@@ -19,21 +19,18 @@ impl AnsiSqlOutput {
             None
         };
         let inserts = BatchedInserts::new(Box::new(schema), batch_size, outp);
-        Self {
-            ddl,
-            inserts,
-        }
+        Self { ddl, inserts }
     }
-
 }
 
 impl OutputSink for AnsiSqlOutput {
     fn output_header(&mut self) -> Result<(), Box<dyn Error>> {
         if self.ddl.is_none() {
-            return Ok(())
+            return Ok(());
         }
         let ddl_ref = self.ddl.as_ref().unwrap();
-        self.inserts.print_header_str(ddl_ref.get_create_sql().as_str() )?;
+        self.inserts
+            .print_header_str(ddl_ref.get_create_sql().as_str())?;
         Ok(())
     }
 
@@ -45,4 +42,3 @@ impl OutputSink for AnsiSqlOutput {
         self.inserts.flush()
     }
 }
-

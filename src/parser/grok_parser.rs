@@ -5,7 +5,7 @@ extern crate grok;
 use std::collections::HashMap;
 use std::error::Error;
 use std::io::{BufRead, Write};
-use std::rc::Rc;
+use std::sync::Arc;
 
 use grok::{patterns, Grok, Pattern};
 
@@ -15,15 +15,15 @@ use crate::parser::schema::{ParserColDef, ParserSchema};
 #[derive(Debug, Clone)]
 pub struct GrokColumnDef {
     pcd: ParserColDef,
-    lookup_names: Vec<Rc<String>>,
+    lookup_names: Vec<Arc<String>>,
     required: bool,
 }
 
 impl GrokColumnDef {
     pub fn new(
-        col_name: Rc<str>,
+        col_name: Arc<str>,
         col_type: ParsedValueType,
-        lookup_names: Vec<Rc<String>>,
+        lookup_names: Vec<Arc<String>>,
         required: bool,
     ) -> GrokColumnDef {
         let pcd = ParserColDef::new(col_name.as_ref(), &col_type);
@@ -49,7 +49,7 @@ impl GrokColumnDef {
         }
     }
 
-    pub fn col_name(&self) -> &Rc<str> {
+    pub fn col_name(&self) -> &Arc<str> {
         &self.pcd.name()
     }
 
@@ -159,7 +159,7 @@ impl LogParser for GrokParser {
         let mopt = self.pattern.match_against(msg.as_str());
         if mopt.is_some() {
             let m = mopt.unwrap();
-            let mut hm: HashMap<Rc<str>, ParsedValue> = HashMap::new();
+            let mut hm: HashMap<Arc<str>, ParsedValue> = HashMap::new();
             for c in &self.schema.columns {
                 let mut found = false;
                 for lnm in &c.lookup_names {
@@ -167,7 +167,7 @@ impl LogParser for GrokParser {
                     if mm.is_some() {
                         let opv: Option<ParsedValue> = str2val(mm.unwrap(), c.col_type());
                         if opv.is_some() {
-                            hm.insert(Rc::from(lnm.as_str()), opv.unwrap());
+                            hm.insert(Arc::from(lnm.as_str()), opv.unwrap());
                             found = true;
                             break;
                         }
@@ -191,34 +191,34 @@ pub fn test_syslog_schema() -> GrokSchema {
         load_default: true,
         columns: vec![
             GrokColumnDef::new(
-                Rc::from("timestamp"),
+                Arc::from("timestamp"),
                 ParsedValueType::TimeType(TimeTypeFormat::new("%b %e %H:%M:%S")),
-                vec![Rc::new(String::from("timestamp"))],
+                vec![Arc::new(String::from("timestamp"))],
                 true,
             ),
             GrokColumnDef::new(
-                Rc::from("message"),
+                Arc::from("message"),
                 ParsedValueType::StrType,
-                vec![Rc::new(String::from("message"))],
-                true
+                vec![Arc::new(String::from("message"))],
+                true,
             ),
             GrokColumnDef::new(
-                Rc::from("logsource"),
+                Arc::from("logsource"),
                 ParsedValueType::StrType,
-                vec![Rc::new(String::from("logsource"))],
-                true
+                vec![Arc::new(String::from("logsource"))],
+                true,
             ),
             GrokColumnDef::new(
-                Rc::from("program"),
+                Arc::from("program"),
                 ParsedValueType::StrType,
-                vec![Rc::new(String::from("program"))],
-                true
+                vec![Arc::new(String::from("program"))],
+                true,
             ),
             GrokColumnDef::new(
-                Rc::from("pid"),
+                Arc::from("pid"),
                 ParsedValueType::LongType,
-                vec![Rc::new(String::from("pid"))],
-                true
+                vec![Arc::new(String::from("pid"))],
+                true,
             ),
         ],
         grok_with_alias_only: false,
@@ -237,15 +237,15 @@ mod tests {
             load_default: false,
             columns: vec![
                 GrokColumnDef::new(
-                    Rc::from("logts"),
+                    Arc::from("logts"),
                     ParsedValueType::TimeType(TimeTypeFormat::new("%Y-%m-%dT%H:%M:%S.%3f%z")),
-                    vec![Rc::new(String::from("logts"))],
+                    vec![Arc::new(String::from("logts"))],
                     true,
                 ),
                 GrokColumnDef::new(
-                    Rc::from("msg"),
+                    Arc::from("msg"),
                     ParsedValueType::StrType,
-                    vec![Rc::new(String::from("msg"))],
+                    vec![Arc::new(String::from("msg"))],
                     true,
                 ),
             ],

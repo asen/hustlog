@@ -1,13 +1,13 @@
 // Copyright 2022 Asen Lazarov
 
-mod external;
 mod args;
 mod conf;
+mod external;
 
-use std::error::Error;
-use std::fmt;
 pub use args::*;
 pub use conf::*;
+use std::error::Error;
+use std::fmt;
 
 #[derive(Debug, Clone)]
 pub struct ConfigError(String);

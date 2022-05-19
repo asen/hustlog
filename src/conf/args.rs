@@ -2,9 +2,8 @@ use std::error::Error;
 use std::fs;
 use std::io::{self, BufWriter, Write};
 
-use clap::Parser;
 use crate::conf::external::ExternalConfig;
-
+use clap::Parser;
 
 #[derive(Parser, Debug)]
 #[clap(name = "hustlog")]
@@ -12,6 +11,16 @@ use crate::conf::external::ExternalConfig;
 #[clap(version = "0.1")]
 #[clap(about = "A tool to mess with logs", long_about = None)]
 pub struct MyArgs {
+    /// print the defoult patterns to the output stream and exit
+    /// not available in config
+    #[clap(long)]
+    pub grok_list_default_patterns: bool,
+
+    /// Yaml config file to use for default values
+    /// command line options still override conf values
+    #[clap(short, long)]
+    pub conf: Option<String>,
+
     ///Input source
     #[clap(short, long)]
     pub input: Option<String>,
@@ -34,11 +43,6 @@ pub struct MyArgs {
     #[clap(long)]
     pub output_add_ddl: bool,
 
-    /// Yaml config file to use for default values
-    /// command line options still override conf values
-    #[clap(short, long)]
-    conf: Option<String>,
-
     /// Grok Pattern name to use
     #[clap(short = 'p', long)]
     pub grok_pattern: Option<String>,
@@ -54,10 +58,6 @@ pub struct MyArgs {
     /// SQL query
     #[clap(short, long)]
     pub query: Option<String>,
-
-    /// print the defoult patterns to the output stream and exit
-    #[clap(long)]
-    pub grok_list_default_patterns: bool,
 
     #[clap(long)]
     pub grok_with_alias_only: bool,
@@ -76,7 +76,6 @@ pub struct MyArgs {
 }
 
 impl MyArgs {
-
     pub fn get_external_conf(&self) -> Result<ExternalConfig, Box<dyn Error>> {
         if self.conf.is_some() {
             let pc = ExternalConfig::from_yaml_file(self.conf.as_ref().unwrap().as_str())?;
@@ -95,11 +94,10 @@ impl MyArgs {
                 } else {
                     Box::new(BufWriter::new(fs::File::create(filename)?))
                 }
-            },
+            }
         };
         Ok(writer)
     }
-
 
     pub fn grok_list_default_patterns(&self) -> bool {
         self.grok_list_default_patterns
