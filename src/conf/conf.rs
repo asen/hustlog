@@ -367,10 +367,10 @@ mod tests {
         assert_eq!(ssc.proto, "tcp");
         assert_eq!(ssc.listen_host, "127.0.0.1");
         assert_eq!(ssc.port, 514);
-        let hc = test_config("syslog-udp::::1:514");
+        let hc = test_config("syslog-udp:[::1]:514");
         let ssc = hc.get_syslog_server_config().unwrap();
         assert_eq!(ssc.proto, "udp");
-        assert_eq!(ssc.listen_host, ":::1");
+        assert_eq!(ssc.listen_host, "[::1]");
         assert_eq!(ssc.port, 514);
     }
 }

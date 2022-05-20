@@ -150,6 +150,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     // no conf/schema before this point, no args after it.
     let conf = HustlogConfig::new(args)?;
+    env_logger::init(); // TODO use conf?
 
     let is_syslog_server = conf.input_is_syslog_server();
     if is_syslog_server {

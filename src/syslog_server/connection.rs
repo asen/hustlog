@@ -1,19 +1,19 @@
 use crate::{LineMerger, RawMessage, SpaceLineMerger};
 use bytes::{Buf, BytesMut};
 use std::error::Error;
-use std::net::SocketAddr;
+use std::sync::Arc;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
 
 pub struct ServerConnection {
     socket: TcpStream,
-    remote_addr: SocketAddr,
+    remote_addr: Arc<str>,
     buffer: BytesMut,
     line_merger: Option<SpaceLineMerger>,
 }
 
 impl ServerConnection {
-    pub fn new(socket: TcpStream, remote_addr: SocketAddr, use_line_merger: bool) -> Self {
+    pub fn new(socket: TcpStream, remote_addr: &Arc<str>, use_line_merger: bool) -> Self {
         let line_merger = if use_line_merger {
             Some(SpaceLineMerger::new())
         } else {
@@ -21,7 +21,7 @@ impl ServerConnection {
         };
         Self {
             socket,
-            remote_addr,
+            remote_addr: Arc::clone(remote_addr),
             buffer: BytesMut::with_capacity(64 * 1024),
             line_merger,
         }
@@ -35,13 +35,16 @@ impl ServerConnection {
             let bytes_read = self.socket.read_buf(&mut self.buffer).await?;
             //println!("DEBUG: bytes_read={}", bytes_read);
             if 0 == bytes_read {
-                // The remote closed the connection. For this to be a clean
-                // shutdown, there should be no data in the read buffer. If
-                // there is, this means that the peer closed the socket while
-                // sending a full line.
                 if self.line_merger.is_some() {
-                    return Ok(self.line_merger.as_mut().unwrap().flush());
+                    let buffered = self.line_merger.as_mut().unwrap().flush();
+                    if buffered.is_some() {
+                        return Ok(buffered);
+                    } // else nothing left in line merger
                 }
+                // The remote closed the connection. For this to be a clean
+                // shutdown, there should be no incomplete lines in the read buffer. If
+                // there is, this means that the peer closed the socket while
+                // sending an incomplete line.
                 if self.buffer.is_empty() {
                     return Ok(None);
                 } else {
