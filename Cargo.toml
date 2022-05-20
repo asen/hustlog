@@ -18,3 +18,4 @@ tokio = { version = "1", features = ["full"] }
 bytes = "1"
 log = "0.4"
 env_logger = "0.9"
+tokio-rayon = "2.1"

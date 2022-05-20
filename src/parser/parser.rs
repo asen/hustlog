@@ -69,7 +69,7 @@ pub enum ParsedValue {
     LongVal(i64),
     DoubleVal(f64),
     TimeVal(DateTime<FixedOffset>),
-    StrVal(Rc<String>),
+    StrVal(Arc<String>),
 }
 
 impl Eq for ParsedValue {}
@@ -296,7 +296,7 @@ fn parse_ts(s: &str, fmt: &TimeTypeFormat) -> Option<DateTime<FixedOffset>> {
 
 pub fn str2val(s: &str, ctype: &ParsedValueType) -> Option<ParsedValue> {
     match ctype {
-        ParsedValueType::StrType => Some(ParsedValue::StrVal(Rc::new(String::from(s)))),
+        ParsedValueType::StrType => Some(ParsedValue::StrVal(Arc::new(String::from(s)))),
         ParsedValueType::LongType => s.parse::<i64>().ok().map(|v| ParsedValue::LongVal(v)),
         ParsedValueType::DoubleType => s.parse::<f64>().ok().map(|v| ParsedValue::DoubleVal(v)),
         ParsedValueType::TimeType(fmt) => parse_ts(s, fmt).map(|v| ParsedValue::TimeVal(v)),
@@ -562,7 +562,7 @@ mod tests {
         );
         assert_eq!(
             str2val("blah", &ParsedValueType::StrType).unwrap(),
-            ParsedValue::StrVal(Rc::new(String::from("blah")))
+            ParsedValue::StrVal(Arc::new(String::from("blah")))
         );
     }
 

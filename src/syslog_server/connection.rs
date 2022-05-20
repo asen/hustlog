@@ -1,9 +1,39 @@
 use crate::{LineMerger, RawMessage, SpaceLineMerger};
 use bytes::{Buf, BytesMut};
 use std::error::Error;
+use std::fmt;
 use std::sync::Arc;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
+
+#[derive(Debug)]
+pub struct ConnectionError {
+    desc: String,
+}
+
+impl ConnectionError {
+    pub fn new(desc: String) -> Self {
+        Self { desc: desc }
+    }
+
+    pub fn get_desc(&self) -> &String {
+        &self.desc
+    }
+}
+
+impl fmt::Display for ConnectionError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Connection error: {}", self.get_desc(),)
+    }
+}
+
+impl Error for ConnectionError {}
+
+impl From<std::io::Error> for ConnectionError {
+    fn from(io_err: std::io::Error) -> Self {
+        ConnectionError::new(io_err.to_string())
+    }
+}
 
 pub struct ServerConnection {
     socket: TcpStream,
@@ -27,7 +57,7 @@ impl ServerConnection {
         }
     }
 
-    pub async fn receive_messsage(&mut self) -> Result<Option<RawMessage>, Box<dyn Error>> {
+    pub async fn receive_messsage(&mut self) -> Result<Option<RawMessage>, ConnectionError> {
         loop {
             if let Some(msg) = self.read_message_from_buf() {
                 return Ok(Some(msg));
@@ -49,7 +79,7 @@ impl ServerConnection {
                     return Ok(None);
                 } else {
                     let err_msg = format!("connection reset by peer: {:?}", self.remote_addr);
-                    return Err(err_msg.into());
+                    return Err(ConnectionError::new(err_msg));
                 }
             }
         }

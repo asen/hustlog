@@ -5,6 +5,7 @@ use std::error::Error;
 use std::fs;
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::sync::Arc;
+use tokio_rayon::rayon::ThreadPoolBuilder;
 
 macro_rules! args_or_external_vec {
     ($a:expr,$b:expr, $prop:ident, $err: expr) => {
@@ -106,6 +107,9 @@ pub struct HustlogConfig {
     output_format: String, //TODO
     output_batch_size: usize,
     output_add_ddl: bool,
+
+    rayon_threads: usize,
+    tick_interval: u64,
 }
 
 impl HustlogConfig {
@@ -136,6 +140,8 @@ impl HustlogConfig {
             output_format: output_format.to_string(),
             output_batch_size: *output_batch_size,
             output_add_ddl: output_add_ddl,
+            rayon_threads: 2, // TODO
+            tick_interval: 30, // TODO
         })
     }
 
@@ -316,6 +322,20 @@ impl HustlogConfig {
             listen_host: listen_host,
             port: port,
         })
+    }
+
+    pub fn init_rayon_pool(&self) -> Result<(), Box<dyn Error>> {
+        let res = ThreadPoolBuilder::new()
+            .num_threads(self.rayon_threads)
+            .build_global();
+        match res {
+            Ok(_) => Ok(()),
+            Err(e) => Err(Box::new(e)),
+        }
+    }
+
+    pub fn get_tick_interval(&self) -> u64 {
+        self.tick_interval
     }
 }
 

@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::ops::{Add, Div, Mul, Rem, Sub};
-use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::query_processor::ql_schema::QlRowContext;
@@ -178,7 +177,7 @@ fn func_arg_to_pv(
             FunctionArgExpr::QualifiedWildcard(_) => Err(QueryError::not_supported(
                 "FunctionArgExpr::QualifiedWildcard",
             )),
-            FunctionArgExpr::Wildcard => Ok(ParsedValue::StrVal(Rc::new("*".to_string()))),
+            FunctionArgExpr::Wildcard => Ok(ParsedValue::StrVal(Arc::new("*".to_string()))),
         },
     }
 }
@@ -285,7 +284,7 @@ pub fn eval_expr(
     match expr {
         Expr::Identifier(x) => {
             if x.quote_style.is_some() || ctx.is_empty() {
-                Ok(ParsedValue::StrVal(Rc::new(x.value.clone())))
+                Ok(ParsedValue::StrVal(Arc::new(x.value.clone())))
             } else {
                 if let Some(lazyv) = dctx.get_value(&x.value, ctx)? {
                     Ok(lazyv)
@@ -348,7 +347,7 @@ pub fn eval_expr(
                 BinaryOperator::StringConcat => {
                     let lstr = lval.to_rc_str();
                     let rstr = rval()?.to_rc_str();
-                    Ok(ParsedValue::StrVal(Rc::new(
+                    Ok(ParsedValue::StrVal(Arc::new(
                         [lstr.as_ref(), rstr.as_ref()].join(""),
                     )))
                 }
@@ -450,7 +449,7 @@ pub fn eval_expr(
                 //Value::Number(x, _) => {}
                 Value::SingleQuotedString(x) => {
                     let s: &String = x;
-                    Ok(ParsedValue::StrVal(Rc::new(s.clone())))
+                    Ok(ParsedValue::StrVal(Arc::new(s.clone())))
                 }
                 Value::NationalStringLiteral(_) => {
                     Err(QueryError::not_impl("Value::NationalStringLiteral"))
@@ -458,7 +457,7 @@ pub fn eval_expr(
                 Value::HexStringLiteral(_) => Err(QueryError::not_impl("Value::HexStringLiteral")),
                 Value::DoubleQuotedString(x) => {
                     let s: &String = x;
-                    Ok(ParsedValue::StrVal(Rc::new(s.clone())))
+                    Ok(ParsedValue::StrVal(Arc::new(s.clone())))
                 }
                 Value::Boolean(b) => Ok(ParsedValue::BoolVal(*b)),
                 Value::Interval { .. } => Err(QueryError::not_impl("Value::Interval")),
