@@ -1,21 +1,21 @@
 use crate::syslog_server::connection::ServerConnection;
-use crate::syslog_server::message_processor::{MessageBatcher, MessageProcessor};
 use crate::syslog_server::server_parser::ServerParser;
 use crate::{GrokParser, HustlogConfig};
 use log::{debug, error, info, log_enabled, trace, Level};
 use std::error::Error;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::signal;
 use tokio::time::interval;
+use crate::syslog_server::batching_queue::{BatchingQueue, MessageSender};
 
 async fn process_socket(
     socket: TcpStream,
     remote_addr: &Arc<str>,
     hc: Arc<HustlogConfig>,
     server_parser: Arc<ServerParser>,
-    processor: Arc<Mutex<dyn MessageProcessor + Send>>,
+    sender: MessageSender,
 ) -> Result<(), Box<dyn Error>> {
     let mut conn = ServerConnection::new(socket, remote_addr, hc.merge_multi_line());
     while let Some(msg) = conn.receive_messsage().await? {
@@ -25,20 +25,44 @@ async fn process_socket(
         let pr = server_parser.parse_raw(msg).await;
         match pr {
             Ok(parsed) => {
-                let process_res = processor.lock().unwrap().process_message(parsed);
-                if let Err(process_err) = process_res {
-                    error!("Error processing message: {}", process_err)
-                }
+                sender.send(parsed)?;
             }
             Err(err) => {
-                let process_res = processor.lock().unwrap().process_error(err);
-                if let Err(process_err) = process_res {
-                    error!("Error processing parser failure: {}", process_err)
-                }
+                // TODO add send_error to MessageSender ?
+                error!("Error parsing message: {}", err);
             }
         }
     }
     Ok(())
+}
+
+fn process_connection_async(
+    socket: TcpStream,
+    remote_addr_str: String,
+    hc: Arc<HustlogConfig>,
+    server_parser: Arc<ServerParser>,
+    sender: MessageSender,
+) {
+    tokio::spawn(async move {
+        let remote_addr = Arc::from(remote_addr_str.as_str());
+        let conn_result = process_socket(socket, &remote_addr, hc, server_parser, sender).await;
+        if let Err(err) = conn_result {
+            error!(
+                "Connection from {} resulted in error: {}",
+                remote_addr, err
+            );
+        } else {
+            debug!("Connection from {} closed", remote_addr)
+        }
+    });
+}
+
+fn consume_queue_async(mut batching_queue: BatchingQueue) {
+    tokio::spawn(async move {
+        info!("Consuming parsed messages queue ...");
+        batching_queue.consume_queue().await;
+        info!("Done consuming parsed messages queue.");
+    });
 }
 
 pub async fn server_main(hc: &HustlogConfig) -> Result<(), Box<dyn Error>> {
@@ -58,40 +82,33 @@ pub async fn server_main(hc: &HustlogConfig) -> Result<(), Box<dyn Error>> {
     let schema = hcrc.get_grok_schema();
     let grok_parser = GrokParser::new(schema.clone())?;
     let server_parser = Arc::new(ServerParser::new(Arc::new(grok_parser)));
-    let batch_processor = Arc::new(Mutex::new(MessageBatcher::new(hcrc.output_batch_size()))); // TODO
+    let batching_queue = BatchingQueue::new(hcrc.output_batch_size()); // TODO
+    let sender = batching_queue.get_sender();
     let mut intvl = interval(Duration::from_secs(hcrc.get_tick_interval()));
+    consume_queue_async(batching_queue);
     loop {
-        // accept connections or process tick events, in a loop
+        // accept connections or process events, in a loop
+        let sender = sender.clone();
         tokio::select! {
             _ = signal::ctrl_c() => {
-                info!("SIGTERM received, flusing buffers ...");
-                batch_processor.lock().unwrap().flush()?;
+                info!("SIGTERM received, flushing buffers ...");
+                sender.shutdown()?;
                 break
             }
             _tick = intvl.tick() => {
-                debug!("TICK");
-                batch_processor.lock().unwrap().flush()?;
+                //debug!("TICK");
+                sender.flush()?;
             }
             accept_res = listener.accept() => {
                 let (socket, remote_addr) = accept_res?;
                 let remote_addr_str: String = remote_addr.to_string();
                 info!("Accepted connection from {}", remote_addr_str.as_str());
-                let hc_arc = Arc::clone(&hcrc);
-                let sp_arc = Arc::clone(&server_parser);
-                let mb_arc = Arc::clone(&batch_processor);
-                tokio::spawn(async move {
-                    let remote_conn_info = Arc::from(remote_addr_str.as_str());
-                    let conn_result =
-                        process_socket(socket, &remote_conn_info, hc_arc, sp_arc, mb_arc).await;
-                    if let Err(err) = conn_result {
-                        error!(
-                            "Connection from {} resulted in error: {}",
-                            remote_conn_info, err
-                        );
-                    } else {
-                        debug!("Connection from {} closed", remote_conn_info)
-                    }
-                });
+                process_connection_async(socket,
+                    remote_addr_str,
+                    Arc::clone(&hcrc),
+                    Arc::clone(&server_parser),
+                    sender,
+                );
             }
         }
     }
