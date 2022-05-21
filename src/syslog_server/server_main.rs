@@ -8,7 +8,9 @@ use std::time::Duration;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::signal;
 use tokio::time::interval;
+use crate::syslog_server::batch_processor::DummyBatchProcessor;
 use crate::syslog_server::batching_queue::{BatchingQueue, MessageSender};
+use crate::syslog_server::batching_queue::MessageQueue;
 
 async fn process_socket(
     socket: TcpStream,
@@ -57,7 +59,7 @@ fn process_connection_async(
     });
 }
 
-fn consume_queue_async(mut batching_queue: BatchingQueue) {
+fn consume_batching_queue_async(mut batching_queue: BatchingQueue) {
     tokio::spawn(async move {
         info!("Consuming parsed messages queue ...");
         batching_queue.consume_queue().await;
@@ -82,21 +84,26 @@ pub async fn server_main(hc: &HustlogConfig) -> Result<(), Box<dyn Error>> {
     let schema = hcrc.get_grok_schema();
     let grok_parser = GrokParser::new(schema.clone())?;
     let server_parser = Arc::new(ServerParser::new(Arc::new(grok_parser)));
-    let batching_queue = BatchingQueue::new(hcrc.output_batch_size()); // TODO
-    let sender = batching_queue.get_sender();
+    // TODO use proper processor, depending on "output" config
+    //let batch_processor: Arc<Mutex<dyn BatchProcessor + Send>> = Arc::new(Mutex::new(DummyBatchProcessor{}));
+    let batch_processor = Arc::new(DummyBatchProcessor{});
+    let batching_queue = BatchingQueue::new(hcrc.output_batch_size(), batch_processor);
+    let sender = batching_queue.clone_sender();
+    consume_batching_queue_async(batching_queue);
     let mut intvl = interval(Duration::from_secs(hcrc.get_tick_interval()));
-    consume_queue_async(batching_queue);
     loop {
         // accept connections or process events, in a loop
         let sender = sender.clone();
         tokio::select! {
             _ = signal::ctrl_c() => {
                 info!("SIGTERM received, flushing buffers ...");
-                sender.shutdown()?;
+                sender.shutdown()?; //this does flush internally
                 break
             }
             _tick = intvl.tick() => {
-                //debug!("TICK");
+                if log_enabled!(Level::Trace) {
+                    trace!("TICK");
+                }
                 sender.flush()?;
             }
             accept_res = listener.accept() => {
