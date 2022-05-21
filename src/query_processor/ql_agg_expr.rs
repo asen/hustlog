@@ -346,10 +346,7 @@ fn get_func_arg_expr(farg: &FunctionArg) -> Result<&Expr, QueryError> {
     }
 }
 
-pub fn get_agg_expr(
-    col_name: &Arc<str>,
-    from: &Expr,
-) -> Result<Option<DynAggExpr>, QueryError> {
+pub fn get_agg_expr(col_name: &Arc<str>, from: &Expr) -> Result<Option<DynAggExpr>, QueryError> {
     let ret: Option<Result<DynAggExpr, QueryError>> = if let Expr::Function(fun) = from {
         let name = object_name_to_string(&fun.name);
         // TODO too much copy/pasting across the match arms

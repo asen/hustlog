@@ -7,6 +7,7 @@ use std::error::Error;
 use std::io::{BufRead, Write};
 use std::sync::Arc;
 
+use crate::{LineMerger, SpaceLineMerger};
 use grok::{patterns, Grok, Pattern};
 
 use crate::parser::parser::*;

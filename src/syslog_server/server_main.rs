@@ -1,5 +1,9 @@
+use crate::syslog_server::batch_processor::{BatchProcessor, DummyBatchProcessor};
+use crate::syslog_server::batching_queue::MessageQueue;
+use crate::syslog_server::batching_queue::{BatchingQueue, MessageSender};
 use crate::syslog_server::connection::ServerConnection;
 use crate::syslog_server::server_parser::ServerParser;
+use crate::syslog_server::sql_batch_processor::SqlBatchProcessor;
 use crate::{GrokParser, HustlogConfig};
 use log::{debug, error, info, log_enabled, trace, Level};
 use std::error::Error;
@@ -8,10 +12,6 @@ use std::time::Duration;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::signal;
 use tokio::time::interval;
-use crate::syslog_server::batch_processor::{BatchProcessor, DummyBatchProcessor};
-use crate::syslog_server::batching_queue::{BatchingQueue, MessageSender};
-use crate::syslog_server::batching_queue::MessageQueue;
-use crate::syslog_server::sql_batch_processor::SqlBatchProcessor;
 
 async fn process_socket(
     socket: TcpStream,
@@ -50,10 +50,7 @@ fn process_connection_async(
         let remote_addr = Arc::from(remote_addr_str.as_str());
         let conn_result = process_socket(socket, &remote_addr, hc, server_parser, sender).await;
         if let Err(err) = conn_result {
-            error!(
-                "Connection from {} resulted in error: {}",
-                remote_addr, err
-            );
+            error!("Connection from {} resulted in error: {}", remote_addr, err);
         } else {
             debug!("Connection from {} closed", remote_addr)
         }
@@ -88,7 +85,10 @@ pub async fn server_main(hc: &HustlogConfig) -> Result<(), Box<dyn Error>> {
     // TODO use proper processor, depending on "output" config
     //let batch_processor: Arc<Mutex<dyn BatchProcessor + Send>> = Arc::new(Mutex::new(DummyBatchProcessor{}));
     let batch_processor: Arc<dyn BatchProcessor + Send + Sync> = if hcrc.query().is_some() {
-        Arc::new(SqlBatchProcessor::new(hcrc.query().as_ref().unwrap().as_str(), schema)?)
+        Arc::new(SqlBatchProcessor::new(
+            hcrc.query().as_ref().unwrap().as_str(),
+            schema,
+        )?)
     } else {
         Arc::new(DummyBatchProcessor {})
     };

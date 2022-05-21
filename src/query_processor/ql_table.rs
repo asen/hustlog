@@ -77,9 +77,10 @@ impl QlMemTable {
 
     pub fn from_parsed_messages_vec(schema: QlSchema, vec: Vec<ParsedMessage>) -> Self {
         let vec_size = vec.len();
-        let buf = vec.into_iter().map(|pm| {
-            QlRow::from_parsed_message(pm, &schema)
-        }).collect::<Vec<_>>();
+        let buf = vec
+            .into_iter()
+            .map(|pm| QlRow::from_parsed_message(pm, &schema))
+            .collect::<Vec<_>>();
         Self {
             schema,
             buf,
@@ -421,7 +422,10 @@ pub fn eval_query(
     Ok(())
 }
 
-pub fn get_group_by_exprs(qry: &SqlSelectQuery, mut empty_lazy_context: &mut LazyContext) -> Result<Vec<usize>, Box<dyn Error>> {
+pub fn get_group_by_exprs(
+    qry: &SqlSelectQuery,
+    mut empty_lazy_context: &mut LazyContext,
+) -> Result<Vec<usize>, Box<dyn Error>> {
     let mut group_by_exprs = Vec::new(); // TODO
     for (ix, gbe) in qry.get_select().group_by.iter().enumerate() {
         let num = eval_integer_expr(
@@ -441,7 +445,10 @@ pub fn get_group_by_exprs(qry: &SqlSelectQuery, mut empty_lazy_context: &mut Laz
     Ok(group_by_exprs)
 }
 
-pub fn get_order_by_exprs(qry: &SqlSelectQuery, mut empty_lazy_context: &mut LazyContext) -> Result<Vec<(usize,bool)>, Box<dyn Error>>  {
+pub fn get_order_by_exprs(
+    qry: &SqlSelectQuery,
+    mut empty_lazy_context: &mut LazyContext,
+) -> Result<Vec<(usize, bool)>, Box<dyn Error>> {
     let mut order_by_exprs = Vec::new(); // TODO
     for (ix, obe) in qry.get_order_by().iter().enumerate() {
         let ex = &obe.expr;

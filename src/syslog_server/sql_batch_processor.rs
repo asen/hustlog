@@ -1,12 +1,12 @@
+use log::info;
 use sqlparser::ast::{Expr, Value};
 use std::error::Error;
-use log::info;
 
 use crate::query_processor::{
     eval_query, get_group_by_exprs, get_limit, get_offset, get_order_by_exprs, get_res_cols,
     LazyContext, QlSelectCols, SqlSelectQuery,
 };
-use crate::syslog_server::batch_processor::{BatchProcessor};
+use crate::syslog_server::batch_processor::BatchProcessor;
 use crate::{GrokSchema, ParsedMessage, QlMemTable, QlSchema};
 
 pub struct SqlBatchProcessor {

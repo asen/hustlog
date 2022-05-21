@@ -195,9 +195,9 @@ impl<'a> QlRowContext<'a> {
 }
 
 pub enum QlSelectItem {
-    RawMessage,                // *
-    LazyExpr(LazyExpr),        // per row expr, must be cloned per row
-    AggExpr(DynAggExpr),       // per query expression (aggregate)
+    RawMessage,          // *
+    LazyExpr(LazyExpr),  // per row expr, must be cloned per row
+    AggExpr(DynAggExpr), // per query expression (aggregate)
 }
 
 pub struct QlSelectCols {

@@ -1,11 +1,11 @@
+use crate::syslog_server::batch_processor::BatchProcessor;
 use crate::ParsedMessage;
+use log::{error, info};
 use std::error::Error;
 use std::fmt;
 use std::sync::Arc;
-use log::{error, info};
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-use crate::syslog_server::batch_processor::BatchProcessor;
 
 #[derive(Debug)]
 pub struct QueueError(String);
@@ -56,10 +56,10 @@ impl MessageSender {
             .send(QueueMessage::Flush)
             .map_err(|e| e.into())
     }
-    
+
     pub fn clone(&self) -> Self {
         Self {
-            channel_sender: self.channel_sender.clone()
+            channel_sender: self.channel_sender.clone(),
         }
     }
 }
@@ -93,7 +93,7 @@ impl BatchingQueue {
         self.buf.push(pm);
         if self.buf.len() >= self.batch_size {
             let batch = self.flush();
-            return Some(batch)
+            return Some(batch);
         }
         None
     }
@@ -107,9 +107,10 @@ impl BatchingQueue {
         tokio_rayon::spawn_fifo(move || {
             //if let Err(err) = my_bp.lock().unwrap().process_batch(batch)
             if let Err(err) = my_bp.process_batch(batch) {
-                    error!("Error processing batch: {}", err);
+                error!("Error processing batch: {}", err);
             }
-        }).await
+        })
+        .await
     }
 
     pub async fn consume_queue(&mut self) {
@@ -128,7 +129,7 @@ impl BatchingQueue {
                     info!("Shutdown message received");
                     let batch = self.flush();
                     self.process_batch(batch).await;
-                    break
+                    break;
                 }
             }
         }

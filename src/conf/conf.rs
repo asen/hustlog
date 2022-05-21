@@ -140,7 +140,7 @@ impl HustlogConfig {
             output_format: output_format.to_string(),
             output_batch_size: *output_batch_size,
             output_add_ddl: output_add_ddl,
-            rayon_threads: 2, // TODO
+            rayon_threads: 2,  // TODO
             tick_interval: 30, // TODO
         })
     }

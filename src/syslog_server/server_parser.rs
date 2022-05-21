@@ -12,9 +12,6 @@ impl ServerParser {
 
     pub async fn parse_raw(&self, raw: RawMessage) -> Result<ParsedMessage, LogParseError> {
         let parser_ref = Arc::clone(&self.log_parser);
-        tokio_rayon::spawn_fifo(move || {
-            parser_ref.parse(raw)
-        })
-        .await
+        tokio_rayon::spawn_fifo(move || parser_ref.parse(raw)).await
     }
 }
