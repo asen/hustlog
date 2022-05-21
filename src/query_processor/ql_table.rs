@@ -5,7 +5,7 @@ use crate::query_processor::ql_schema::{
 };
 use crate::query_processor::QueryError;
 use crate::query_processor::SqlSelectQuery;
-use crate::{GrokSchema, ParsedValue, ParserIterator, RawMessage};
+use crate::{GrokSchema, ParsedMessage, ParsedValue, ParserIterator, RawMessage};
 use sqlparser::ast::{Expr, Value};
 use std::cmp::{min, Ordering};
 use std::collections::hash_map::Entry;
@@ -75,7 +75,19 @@ impl QlMemTable {
         }
     }
 
-    #[cfg(test)]
+    pub fn from_parsed_messages_vec(schema: QlSchema, vec: Vec<ParsedMessage>) -> Self {
+        let vec_size = vec.len();
+        let buf = vec.into_iter().map(|pm| {
+            QlRow::from_parsed_message(pm, &schema)
+        }).collect::<Vec<_>>();
+        Self {
+            schema,
+            buf,
+            written: vec_size,
+            read: 0,
+        }
+    }
+
     pub fn get_rows(&self) -> &Vec<QlRow> {
         &self.buf
     }
@@ -295,7 +307,7 @@ impl QlGroupByContext {
 //     }
 // }
 
-fn get_limit(
+pub fn get_limit(
     qry: &SqlSelectQuery,
     empty_lazy_context: &mut LazyContext,
 ) -> Result<Option<usize>, QueryError> {
@@ -312,7 +324,7 @@ fn get_limit(
     }
 }
 
-fn get_offset(
+pub fn get_offset(
     qry: &SqlSelectQuery,
     empty_lazy_context: &mut LazyContext,
 ) -> Result<i64, QueryError> {
@@ -409,6 +421,51 @@ pub fn eval_query(
     Ok(())
 }
 
+pub fn get_group_by_exprs(qry: &SqlSelectQuery, mut empty_lazy_context: &mut LazyContext) -> Result<Vec<usize>, Box<dyn Error>> {
+    let mut group_by_exprs = Vec::new(); // TODO
+    for (ix, gbe) in qry.get_select().group_by.iter().enumerate() {
+        let num = eval_integer_expr(
+            gbe,
+            &QlRowContext::empty(),
+            &mut empty_lazy_context,
+            ix.to_string().as_str(),
+        )?;
+        if num > 0 {
+            group_by_exprs.push(num as usize - 1);
+        } else {
+            return Err(Box::new(QueryError::new(
+                "GROUP BY columns are 1-based column indexes",
+            )));
+        }
+    }
+    Ok(group_by_exprs)
+}
+
+pub fn get_order_by_exprs(qry: &SqlSelectQuery, mut empty_lazy_context: &mut LazyContext) -> Result<Vec<(usize,bool)>, Box<dyn Error>>  {
+    let mut order_by_exprs = Vec::new(); // TODO
+    for (ix, obe) in qry.get_order_by().iter().enumerate() {
+        let ex = &obe.expr;
+        if obe.nulls_first.is_some() {
+            return Err(Box::new(QueryError::not_supported(
+                "NULLS FIRST or NULLS LAST are not supported, nulls are always first for now",
+            )));
+        }
+        let num = eval_integer_expr(
+            ex,
+            &QlRowContext::empty(),
+            &mut empty_lazy_context,
+            ix.to_string().as_str(),
+        )?;
+        if num > 0 {
+            order_by_exprs.push((num as usize - 1, obe.asc.unwrap_or(true)));
+        } else {
+            return Err(Box::new(QueryError::new(
+                "ORDER BY columns are 1-based column indexes",
+            )));
+        }
+    }
+    Ok(order_by_exprs)
+}
 pub fn process_sql(
     schema: &GrokSchema,
     pit: ParserIterator,
@@ -437,46 +494,8 @@ pub fn process_sql(
     let offset = get_offset(&qry, &mut empty_lazy_context)?;
 
     //println!("process_sql: {}", select_c.cols().len());
-
-    let mut group_by_exprs = Vec::new(); // TODO
-    for (ix, gbe) in qry.get_select().group_by.iter().enumerate() {
-        let num = eval_integer_expr(
-            gbe,
-            &QlRowContext::empty(),
-            &mut empty_lazy_context,
-            ix.to_string().as_str(),
-        )?;
-        if num > 0 {
-            group_by_exprs.push(num as usize - 1);
-        } else {
-            return Err(Box::new(QueryError::new(
-                "GROUP BY columns are 1-based column indexes",
-            )));
-        }
-    }
-    let mut order_by_exprs = Vec::new(); // TODO
-    for (ix, obe) in qry.get_order_by().iter().enumerate() {
-        let ex = &obe.expr;
-        if obe.nulls_first.is_some() {
-            return Err(Box::new(QueryError::not_supported(
-                "NULLS FIRST or NULLS LAST are not supported, nulls are always first for now",
-            )));
-        }
-        let num = eval_integer_expr(
-            ex,
-            &QlRowContext::empty(),
-            &mut empty_lazy_context,
-            ix.to_string().as_str(),
-        )?;
-        if num > 0 {
-            order_by_exprs.push((num as usize - 1, obe.asc.unwrap_or(true)));
-        } else {
-            return Err(Box::new(QueryError::new(
-                "ORDER BY columns are 1-based column indexes",
-            )));
-        }
-    }
-
+    let group_by_exprs = get_group_by_exprs(&qry, &mut empty_lazy_context)?;
+    let order_by_exprs = get_order_by_exprs(&qry, &mut empty_lazy_context)?;
     eval_query(
         &select_c,
         where_c,

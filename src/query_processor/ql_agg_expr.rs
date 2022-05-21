@@ -5,13 +5,15 @@ use std::borrow::BorrowMut;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+pub type DynAggExpr = Box<dyn AggExpr + Send + Sync>;
+
 pub trait AggExpr {
     fn add_context(&mut self, ctx: &QlRowContext, dctx: &mut LazyContext)
         -> Result<(), QueryError>;
 
     fn eval(&self) -> Result<ParsedValue, QueryError>;
 
-    fn clone_expr(&self) -> Box<dyn AggExpr>;
+    fn clone_expr(&self) -> DynAggExpr;
 
     fn name(&self) -> &Arc<str>;
 
@@ -40,7 +42,7 @@ impl AggExpr for CountExpr {
         Ok(ParsedValue::LongVal(self.cnt))
     }
 
-    fn clone_expr(&self) -> Box<dyn AggExpr> {
+    fn clone_expr(&self) -> DynAggExpr {
         Box::new(Self {
             name: self.name.clone(),
             cnt: self.cnt,
@@ -80,7 +82,7 @@ impl AggExpr for CountDistinctExpr {
         Ok(ParsedValue::LongVal(self.distinct_vs.len() as i64))
     }
 
-    fn clone_expr(&self) -> Box<dyn AggExpr> {
+    fn clone_expr(&self) -> DynAggExpr {
         Box::new(Self {
             name: self.name.clone(),
             distinct_expr: self.distinct_expr.clone(),
@@ -127,7 +129,7 @@ impl AggExpr for MinExpr {
         Ok(self.curv.as_ref().unwrap_or(&ParsedValue::NullVal).clone())
     }
 
-    fn clone_expr(&self) -> Box<dyn AggExpr> {
+    fn clone_expr(&self) -> DynAggExpr {
         Box::new(Self {
             name: self.name.clone(),
             expr: self.expr.clone(),
@@ -174,7 +176,7 @@ impl AggExpr for MaxExpr {
         Ok(self.curv.as_ref().unwrap_or(&ParsedValue::NullVal).clone())
     }
 
-    fn clone_expr(&self) -> Box<dyn AggExpr> {
+    fn clone_expr(&self) -> DynAggExpr {
         Box::new(Self {
             name: self.name.clone(),
             expr: self.expr.clone(),
@@ -245,7 +247,7 @@ impl AggExpr for SumExpr {
         Ok(self.curv.as_ref().unwrap_or(&ParsedValue::NullVal).clone())
     }
 
-    fn clone_expr(&self) -> Box<dyn AggExpr> {
+    fn clone_expr(&self) -> DynAggExpr {
         Box::new(Self {
             name: self.name.clone(),
             expr: self.expr.clone(),
@@ -298,7 +300,7 @@ impl AggExpr for AvgExpr {
         }
     }
 
-    fn clone_expr(&self) -> Box<dyn AggExpr> {
+    fn clone_expr(&self) -> DynAggExpr {
         Box::new(Self {
             sum_expr: SumExpr {
                 name: self.sum_expr.name.clone(),
@@ -347,8 +349,8 @@ fn get_func_arg_expr(farg: &FunctionArg) -> Result<&Expr, QueryError> {
 pub fn get_agg_expr(
     col_name: &Arc<str>,
     from: &Expr,
-) -> Result<Option<Box<dyn AggExpr>>, QueryError> {
-    let ret: Option<Result<Box<dyn AggExpr>, QueryError>> = if let Expr::Function(fun) = from {
+) -> Result<Option<DynAggExpr>, QueryError> {
+    let ret: Option<Result<DynAggExpr, QueryError>> = if let Expr::Function(fun) = from {
         let name = object_name_to_string(&fun.name);
         // TODO too much copy/pasting across the match arms
         match name.to_ascii_uppercase().as_str() {

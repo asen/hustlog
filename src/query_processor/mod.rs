@@ -1,5 +1,5 @@
 use crate::parser::*;
-use crate::query_processor::ql_eval_expr::*;
+pub use crate::query_processor::ql_eval_expr::*;
 pub use crate::query_processor::ql_parse::*;
 pub use crate::query_processor::ql_schema::*;
 pub use crate::query_processor::ql_table::*;

@@ -14,17 +14,16 @@ impl Error for ProcessingError {}
 
 
 pub trait BatchProcessor {
-    fn process_batch(&self, batch:Vec<ParsedMessage>) -> Result<(),ProcessingError>;
+    fn process_batch(&self, batch:Vec<ParsedMessage>) -> Result<(), Box<dyn Error>>;
 }
 
 pub struct DummyBatchProcessor {}
 
 impl BatchProcessor for DummyBatchProcessor {
-    fn process_batch(&self, batch: Vec<ParsedMessage>) -> Result<(), ProcessingError> {
+    fn process_batch(&self, batch: Vec<ParsedMessage>) -> Result<(), Box<dyn Error>> {
         for m in batch {
             info!("PARSED_MESSAGE: {:?}", m);
         };
         Ok(())
     }
 }
-

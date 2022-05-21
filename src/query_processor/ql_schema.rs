@@ -1,4 +1,4 @@
-use crate::query_processor::ql_agg_expr::{get_agg_expr, AggExpr};
+use crate::query_processor::ql_agg_expr::{get_agg_expr, AggExpr, DynAggExpr};
 use crate::query_processor::ql_eval_expr::{
     eval_expr_type, object_name_to_string, LazyContext, LazyExpr,
 };
@@ -82,12 +82,12 @@ impl QlColDef {
 
 #[derive(Clone)]
 pub struct QlSchema {
-    name: Rc<str>,
+    name: Arc<str>,
     cols: Vec<QlColDef>,
 }
 
 impl QlSchema {
-    pub fn new(name: Rc<str>, cols: Vec<QlColDef>) -> Self {
+    pub fn new(name: Arc<str>, cols: Vec<QlColDef>) -> Self {
         Self { name, cols }
     }
     pub fn from(gs: &GrokSchema) -> QlSchema {
@@ -97,7 +97,7 @@ impl QlSchema {
             .map(|gcd| QlColDef::from(gcd))
             .collect::<Vec<_>>();
         Self {
-            name: Rc::from(gs.name()),
+            name: Arc::from(gs.name()),
             cols,
         }
     }
@@ -197,7 +197,7 @@ impl<'a> QlRowContext<'a> {
 pub enum QlSelectItem {
     RawMessage,                // *
     LazyExpr(LazyExpr),        // per row expr, must be cloned per row
-    AggExpr(Box<dyn AggExpr>), //per query expression (aggregate)
+    AggExpr(DynAggExpr),       // per query expression (aggregate)
 }
 
 pub struct QlSelectCols {

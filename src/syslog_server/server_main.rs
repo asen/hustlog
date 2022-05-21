@@ -8,9 +8,10 @@ use std::time::Duration;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::signal;
 use tokio::time::interval;
-use crate::syslog_server::batch_processor::DummyBatchProcessor;
+use crate::syslog_server::batch_processor::{BatchProcessor, DummyBatchProcessor};
 use crate::syslog_server::batching_queue::{BatchingQueue, MessageSender};
 use crate::syslog_server::batching_queue::MessageQueue;
+use crate::syslog_server::sql_batch_processor::SqlBatchProcessor;
 
 async fn process_socket(
     socket: TcpStream,
@@ -86,7 +87,11 @@ pub async fn server_main(hc: &HustlogConfig) -> Result<(), Box<dyn Error>> {
     let server_parser = Arc::new(ServerParser::new(Arc::new(grok_parser)));
     // TODO use proper processor, depending on "output" config
     //let batch_processor: Arc<Mutex<dyn BatchProcessor + Send>> = Arc::new(Mutex::new(DummyBatchProcessor{}));
-    let batch_processor = Arc::new(DummyBatchProcessor{});
+    let batch_processor: Arc<dyn BatchProcessor + Send + Sync> = if hcrc.query().is_some() {
+        Arc::new(SqlBatchProcessor::new(hcrc.query().as_ref().unwrap().as_str(), schema)?)
+    } else {
+        Arc::new(DummyBatchProcessor {})
+    };
     let batching_queue = BatchingQueue::new(hcrc.output_batch_size(), batch_processor);
     let sender = batching_queue.clone_sender();
     consume_batching_queue_async(batching_queue);
