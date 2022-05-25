@@ -22,6 +22,10 @@ pub struct ExternalConfig {
     pub output_format: Option<String>,
     pub output_batch_size: Option<usize>,
     pub output_add_ddl: Option<bool>,
+
+    pub rayon_threads: Option<usize>,
+    pub tick_interval: Option<u64>,
+
 }
 
 impl ExternalConfig {
@@ -49,6 +53,8 @@ impl ExternalConfig {
             output_format: None,
             output_batch_size: None,
             output_add_ddl: None,
+            rayon_threads: None,
+            tick_interval: None,
         }
     }
 }

@@ -44,11 +44,11 @@ pub struct MyArgs {
     pub output_add_ddl: bool,
 
     /// Grok Pattern name to use
-    #[clap(short = 'p', long)]
+    #[clap(short = 'g', long)]
     pub grok_pattern: Option<String>,
 
     /// Grok Patterns file to use
-    #[clap(short = 't', long)]
+    #[clap(short = 'p', long)]
     pub grok_patterns_file: Option<String>,
 
     /// Extra Grok Patterns, can be multiple. E.g. -e "NOT_SPACE [^ ]+"
@@ -73,6 +73,19 @@ pub struct MyArgs {
     /// Whether to merge lines starting with whitespace with the previous ones
     #[clap(short, long)]
     pub merge_multi_line: bool,
+
+    /// How many threads to use in the "CPU-intensive work" (Rayon) thread pool.
+    /// Default is 2
+    #[clap(short, long)]
+    pub rayon_threads: Option<usize>,
+
+    /// How often the server "tick" event should be emitted, in seconds.
+    /// Normally buffers are flushed at that time so that ends up being the maximum deplay
+    /// between a message entering the system and being (batch) processed.
+    /// Default is 30 seconds.
+    #[clap(short, long)]
+    pub tick_interval: Option<u64>,
+
 }
 
 impl MyArgs {
