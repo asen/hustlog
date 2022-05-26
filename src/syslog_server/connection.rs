@@ -35,14 +35,14 @@ impl From<std::io::Error> for ConnectionError {
     }
 }
 
-pub struct ServerConnection {
+pub struct TcpServerConnection {
     socket: TcpStream,
     remote_addr: Arc<str>,
     buffer: BytesMut,
     line_merger: Option<SpaceLineMerger>,
 }
 
-impl ServerConnection {
+impl TcpServerConnection {
     pub fn new(socket: TcpStream, remote_addr: &Arc<str>, use_line_merger: bool) -> Self {
         let line_merger = if use_line_merger {
             Some(SpaceLineMerger::new())

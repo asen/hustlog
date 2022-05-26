@@ -1,7 +1,7 @@
 use crate::syslog_server::batch_processor::{BatchProcessor, DummyBatchProcessor};
 use crate::syslog_server::batching_queue::MessageQueue;
 use crate::syslog_server::batching_queue::{BatchingQueue, MessageSender};
-use crate::syslog_server::connection::{ConnectionError, ServerConnection};
+use crate::syslog_server::connection::{ConnectionError, TcpServerConnection};
 use crate::syslog_server::server_parser::ServerParser;
 use crate::syslog_server::sql_batch_processor::SqlBatchProcessor;
 use crate::{GrokParser, HustlogConfig, RawMessage};
@@ -20,7 +20,7 @@ async fn process_socket(
     server_parser: Arc<ServerParser>,
     sender: MessageSender,
 ) -> Result<(), Box<dyn Error>> {
-    let mut conn = ServerConnection::new(socket, remote_addr, hc.merge_multi_line());
+    let mut conn = TcpServerConnection::new(socket, remote_addr, hc.merge_multi_line());
     while let Some(msg) = conn.receive_messsage().await? {
         if log_enabled!(Level::Trace) {
             trace!("RECEIVED MESSAGE: {:?}", msg)
