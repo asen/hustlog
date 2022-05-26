@@ -140,8 +140,13 @@ impl HustlogConfig {
             output_format: output_format.to_string(),
             output_batch_size: *output_batch_size,
             output_add_ddl: output_add_ddl,
-            rayon_threads: *args_or_external_opt_default!(&args, &external_conf, rayon_threads, &2),  // TODO
-            tick_interval: *args_or_external_opt_default!(&args, &external_conf, tick_interval, &30), // TODO
+            rayon_threads: *args_or_external_opt_default!(&args, &external_conf, rayon_threads, &2), // TODO
+            tick_interval: *args_or_external_opt_default!(
+                &args,
+                &external_conf,
+                tick_interval,
+                &30
+            ), // TODO
         })
     }
 

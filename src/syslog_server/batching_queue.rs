@@ -1,76 +1,13 @@
 use crate::syslog_server::batch_processor::BatchProcessor;
+use crate::syslog_server::message_queue::{MessageQueue, MessageSender, QueueMessage};
 use crate::ParsedMessage;
 use log::{error, info};
-use std::error::Error;
-use std::fmt;
 use std::sync::Arc;
-use tokio::sync::mpsc::error::SendError;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
-#[derive(Debug)]
-pub struct QueueError(String);
-impl fmt::Display for QueueError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "ChannelError: {}", self.0)
-    }
-}
-impl Error for QueueError {}
-
-impl From<SendError<QueueMessage>> for QueueError {
-    fn from(err: SendError<QueueMessage>) -> Self {
-        Self(err.to_string())
-    }
-}
-
-enum QueueMessage {
-    Data(ParsedMessage),
-    Flush,
-    Shutdown,
-}
-
-pub struct MessageSender {
-    channel_sender: UnboundedSender<QueueMessage>,
-}
-
-//TODO maybe convert to a trait if unbounded_queue needs to be bounded/configurable
-impl MessageSender {
-    //NOT pub
-    fn new(channel_sender: UnboundedSender<QueueMessage>) -> Self {
-        Self { channel_sender }
-    }
-
-    pub fn send(&self, value: ParsedMessage) -> Result<(), QueueError> {
-        self.channel_sender
-            .send(QueueMessage::Data(value))
-            .map_err(|e| e.into())
-    }
-
-    pub fn shutdown(&self) -> Result<(), QueueError> {
-        self.channel_sender
-            .send(QueueMessage::Shutdown)
-            .map_err(|e| e.into())
-    }
-
-    pub fn flush(&self) -> Result<(), QueueError> {
-        self.channel_sender
-            .send(QueueMessage::Flush)
-            .map_err(|e| e.into())
-    }
-
-    pub fn clone(&self) -> Self {
-        Self {
-            channel_sender: self.channel_sender.clone(),
-        }
-    }
-}
-
-pub trait MessageQueue {
-    fn clone_sender(&self) -> MessageSender;
-}
-
 pub struct BatchingQueue {
-    tx: UnboundedSender<QueueMessage>,
-    rx: UnboundedReceiver<QueueMessage>,
+    tx: UnboundedSender<QueueMessage<ParsedMessage>>,
+    rx: UnboundedReceiver<QueueMessage<ParsedMessage>>,
     buf: Vec<ParsedMessage>,
     batch_size: usize,
     batch_processor: Arc<dyn BatchProcessor + Send + Sync>,
@@ -136,8 +73,8 @@ impl BatchingQueue {
     }
 }
 
-impl MessageQueue for BatchingQueue {
-    fn clone_sender(&self) -> MessageSender {
+impl MessageQueue<ParsedMessage> for BatchingQueue {
+    fn clone_sender(&self) -> MessageSender<ParsedMessage> {
         MessageSender::new(self.tx.clone())
     }
 }

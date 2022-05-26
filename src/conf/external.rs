@@ -25,7 +25,6 @@ pub struct ExternalConfig {
 
     pub rayon_threads: Option<usize>,
     pub tick_interval: Option<u64>,
-
 }
 
 impl ExternalConfig {

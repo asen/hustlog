@@ -85,7 +85,6 @@ pub struct MyArgs {
     /// Default is 30 seconds.
     #[clap(short, long)]
     pub tick_interval: Option<u64>,
-
 }
 
 impl MyArgs {
