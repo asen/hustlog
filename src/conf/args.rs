@@ -80,11 +80,16 @@ pub struct MyArgs {
     pub rayon_threads: Option<usize>,
 
     /// How often the server "tick" event should be emitted, in seconds.
-    /// Normally buffers are flushed at that time so that ends up being the maximum deplay
+    /// Normally buffers are flushed at that time so that ends up being the maximum delay
     /// between a message entering the system and being (batch) processed.
     /// Default is 30 seconds.
-    #[clap(short, long)]
+    #[clap(long)]
     pub tick_interval: Option<u64>,
+
+    /// Idle UDP streams are closed after being idle for that long
+    /// Default is 30 seconds.
+    #[clap(long)]
+    pub idle_timeout: Option<u64>,
 }
 
 impl MyArgs {

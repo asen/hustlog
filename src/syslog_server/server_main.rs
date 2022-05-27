@@ -159,8 +159,12 @@ async fn udp_server_main(
         &host_port, hcrc
     );
     let mut buf = vec![0; 65535];
-    let server_state =
-        UdpServerState::new(server_parser, parsed_sender, 30, hcrc.merge_multi_line());
+    let server_state = UdpServerState::new(
+        server_parser,
+        parsed_sender,
+        hcrc.get_idle_timeout(),
+        hcrc.merge_multi_line(),
+    );
     let sender = server_state.get_sender();
     consume_udp_server_state_queue_async(server_state);
     loop {
