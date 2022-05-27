@@ -1,11 +1,11 @@
 use crate::syslog_server::batch_processor::{BatchProcessor, DummyBatchProcessor};
 use crate::syslog_server::batching_queue::BatchingQueue;
 use crate::syslog_server::message_queue::{MessageQueue, MessageSender};
-use crate::syslog_server::server_parser::ServerParser;
+use crate::syslog_server::async_parser::AsyncParser;
 use crate::syslog_server::sql_batch_processor::SqlBatchProcessor;
 use crate::syslog_server::tcp_connection::{ConnectionError, TcpServerConnection};
 use crate::syslog_server::udp_stream::{UdpData, UdpServerState};
-use crate::{GrokParser, HustlogConfig, ParsedMessage};
+use crate::{GrokParser, HustlogConfig, RawMessage};
 use log::{debug, error, info, log_enabled, trace, Level};
 use std::error::Error;
 use std::sync::Arc;
@@ -18,8 +18,7 @@ async fn process_socket(
     socket: TcpStream,
     remote_addr: &Arc<str>,
     hc: Arc<HustlogConfig>,
-    server_parser: Arc<ServerParser>,
-    sender: MessageSender<ParsedMessage>,
+    sender: MessageSender<Vec<RawMessage>>,
 ) -> Result<(), Box<dyn Error>> {
     let mut conn = TcpServerConnection::new(socket, remote_addr, hc.merge_multi_line());
     loop {
@@ -30,18 +29,7 @@ async fn process_socket(
         if log_enabled!(Level::Trace) {
             trace!("RECEIVED MESSAGES BATCH: {:?}", batch)
         }
-        let parse_result = server_parser.parse_batch(batch).await;
-        for pr in parse_result {
-            match pr {
-                Ok(parsed) => {
-                    sender.send(parsed)?;
-                }
-                Err(err) => {
-                    // TODO add send_error to MessageSender ?
-                    error!("Error parsing message: {}", err);
-                }
-            }
-        }
+        sender.send(batch)?
     }
     Ok(())
 }
@@ -50,12 +38,11 @@ fn process_connection_async(
     socket: TcpStream,
     remote_addr_str: String,
     hc: Arc<HustlogConfig>,
-    server_parser: Arc<ServerParser>,
-    sender: MessageSender<ParsedMessage>,
+    sender: MessageSender<Vec<RawMessage>>,
 ) {
     tokio::spawn(async move {
         let remote_addr = Arc::from(remote_addr_str.as_str());
-        let conn_result = process_socket(socket, &remote_addr, hc, server_parser, sender).await;
+        let conn_result = process_socket(socket, &remote_addr, hc, sender).await;
         if let Err(err) = conn_result {
             error!("Connection from {} resulted in error: {}", remote_addr, err);
         } else {
@@ -64,28 +51,10 @@ fn process_connection_async(
     });
 }
 
-fn consume_batching_queue_async(mut batching_queue: BatchingQueue) {
-    tokio::spawn(async move {
-        info!("Consuming parsed messages queue ...");
-        batching_queue.consume_queue().await;
-        info!("Done consuming parsed messages queue.");
-    });
-}
-
-fn consume_udp_server_state_queue_async(mut udp_server_state: UdpServerState) {
-    tokio::spawn(async move {
-        info!("Consuming Udp Server State messages queue ...");
-        udp_server_state.consume_queue().await;
-        info!("Done consuming Udp Server State messages queue.");
-    });
-}
-
 fn create_batch_processor(
     hcrc: &Arc<HustlogConfig>,
-) -> Result<(MessageSender<ParsedMessage>, Arc<ServerParser>), Box<dyn Error>> {
+) -> Result<MessageSender<Vec<RawMessage>>, Box<dyn Error>> {
     let schema = hcrc.get_grok_schema();
-    let grok_parser = GrokParser::new(schema.clone())?;
-    let server_parser = Arc::new(ServerParser::new(Arc::new(grok_parser)));
     // TODO use proper processor, depending on "output" config
     //let batch_processor: Arc<Mutex<dyn BatchProcessor + Send>> = Arc::new(Mutex::new(DummyBatchProcessor{}));
     let batch_processor: Arc<dyn BatchProcessor + Send + Sync> = if hcrc.query().is_some() {
@@ -97,16 +66,20 @@ fn create_batch_processor(
         Arc::new(DummyBatchProcessor {})
     };
     let batching_queue = BatchingQueue::new(hcrc.output_batch_size(), batch_processor);
-    let sender = batching_queue.clone_sender();
-    consume_batching_queue_async(batching_queue);
-    Ok((sender, server_parser))
+    let parsed_sender = batching_queue.clone_sender();
+    batching_queue.consume_batching_queue_async();
+    let grok_parser = GrokParser::new(schema.clone())?;
+    let async_parser = AsyncParser::new(parsed_sender, Arc::from(grok_parser));
+    let raw_sender = async_parser.get_sender();
+    async_parser.consume_parser_queue_async();
+    Ok(raw_sender)
 }
 
 async fn tcp_server_main(
     hcrc: Arc<HustlogConfig>,
     host_port: &String,
 ) -> Result<(), Box<dyn Error>> {
-    let (sender, server_parser) = create_batch_processor(&hcrc)?;
+    let sender = create_batch_processor(&hcrc)?;
     let mut intvl = interval(Duration::from_secs(hcrc.get_tick_interval()));
 
     let listener = TcpListener::bind(&host_port).await?;
@@ -137,7 +110,6 @@ async fn tcp_server_main(
                 process_connection_async(socket,
                     remote_addr_str,
                     Arc::clone(&hcrc),
-                    Arc::clone(&server_parser),
                     sender,
                 );
             }
@@ -150,7 +122,8 @@ async fn udp_server_main(
     hcrc: Arc<HustlogConfig>,
     host_port: &String,
 ) -> Result<(), Box<dyn Error>> {
-    let (parsed_sender, server_parser) = create_batch_processor(&hcrc)?;
+    let raw_sender = create_batch_processor(&hcrc)?;
+
     let mut intvl = interval(Duration::from_secs(hcrc.get_tick_interval()));
 
     let socket = UdpSocket::bind(host_port).await?;
@@ -160,13 +133,12 @@ async fn udp_server_main(
     );
     let mut buf = vec![0; 65535];
     let server_state = UdpServerState::new(
-        server_parser,
-        parsed_sender,
+        raw_sender,
         hcrc.get_idle_timeout(),
         hcrc.merge_multi_line(),
     );
     let sender = server_state.get_sender();
-    consume_udp_server_state_queue_async(server_state);
+    server_state.consume_udp_server_state_queue_async();
     loop {
         let sender = sender.clone();
         tokio::select! {

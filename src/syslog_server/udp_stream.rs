@@ -1,7 +1,6 @@
 use crate::syslog_server::lines_buffer::LinesBuffer;
 use crate::syslog_server::message_queue::{MessageSender, QueueMessage};
-use crate::syslog_server::server_parser::ServerParser;
-use crate::ParsedMessage;
+use crate::RawMessage;
 use bytes::BufMut;
 use log::{debug, error, info};
 use std::collections::HashMap;
@@ -65,8 +64,7 @@ impl UdpData {
 }
 
 pub struct UdpServerState {
-    server_parser: Arc<ServerParser>,
-    parsed_tx: MessageSender<ParsedMessage>,
+    parser_tx: MessageSender<Vec<RawMessage>>,
     tx: UnboundedSender<QueueMessage<UdpData>>,
     rx: UnboundedReceiver<QueueMessage<UdpData>>,
     streams: HashMap<Arc<str>, UdpStream>,
@@ -76,15 +74,13 @@ pub struct UdpServerState {
 
 impl UdpServerState {
     pub fn new(
-        server_parser: Arc<ServerParser>,
-        parsed_tx: MessageSender<ParsedMessage>,
+        parser_tx: MessageSender<Vec<RawMessage>>,
         min_idle_ttl: u64,
         use_line_merger: bool,
     ) -> Self {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         Self {
-            server_parser,
-            parsed_tx,
+            parser_tx,
             tx,
             rx,
             streams: HashMap::new(),
@@ -114,7 +110,7 @@ impl UdpServerState {
                 total_drained += drained;
             };
         }
-        if let Err(err) = self.parsed_tx.flush() {
+        if let Err(err) = self.parser_tx.flush() {
             error!("Failed to send flush message to parser: {}", err)
         }
         total_drained
@@ -123,30 +119,14 @@ impl UdpServerState {
     async fn drain_stream(&mut self, buf: &mut LinesBuffer) -> usize {
         //let buf = stream.get_buffer();
         let msgs = buf.read_messages_from_buf();
-        let parse_res = self.server_parser.parse_batch(msgs).await;
-        let mut ret = 0;
-        for pr in parse_res {
-            ret += 1;
-            match pr {
-                Ok(parsed) => {
-                    if let Err(err) = self.parsed_tx.send(parsed) {
-                        error!(
-                            "Error sending parsed message downstream - aborting: {:?}",
-                            err
-                        );
-                        break;
-                    };
-                }
-                Err(err) => {
-                    // TODO add send_error to MessageSender ?
-                    error!("Error parsing message: {}", err);
-                }
-            }
+        let ret = msgs.len();
+        if let Err(err) = self.parser_tx.send(msgs) {
+            error!("Error sending parsed message downstream: {:?}", err);
         }
         ret
     }
 
-    pub async fn consume_queue(&mut self) {
+    async fn consume_queue(&mut self) {
         while let Some(usmsg) = self.rx.recv().await {
             match usmsg {
                 QueueMessage::Data(ud) => {
@@ -163,24 +143,13 @@ impl UdpServerState {
                     let lines_buf = stream.get_buffer();
                     lines_buf.get_buf().put(data.as_slice());
                     let msgs = lines_buf.read_messages_from_buf();
-                    let parse_res = self.server_parser.parse_batch(msgs).await;
-                    for pr in parse_res {
-                        match pr {
-                            Ok(parsed) => {
-                                if let Err(err) = self.parsed_tx.send(parsed) {
-                                    error!(
-                                        "Error sending parsed message downstream - aborting: {:?}",
-                                        err
-                                    );
-                                    break;
-                                };
-                            }
-                            Err(err) => {
-                                // TODO add send_error to MessageSender ?
-                                error!("Error parsing message: {}", err);
-                            }
-                        }
-                    }
+                    if let Err(err) = self.parser_tx.send(msgs) {
+                        error!(
+                            "Error sending parsed message downstream - aborting: {:?}",
+                            err
+                        );
+                        break;
+                    };
                 }
                 QueueMessage::Flush => {
                     let flushed = self.flush(system_time_now()).await;
@@ -196,6 +165,14 @@ impl UdpServerState {
                 }
             }
         }
+    }
+
+    pub fn consume_udp_server_state_queue_async(mut self) {
+        tokio::spawn(async move {
+            info!("Consuming Udp Server State messages queue ...");
+            self.consume_queue().await;
+            info!("Done consuming Udp Server State messages queue.");
+        });
     }
 
     pub fn get_sender(&self) -> MessageSender<UdpData> {

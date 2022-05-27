@@ -50,7 +50,7 @@ impl BatchingQueue {
         .await
     }
 
-    pub async fn consume_queue(&mut self) {
+    async fn consume_queue(&mut self) {
         while let Some(cmsg) = self.rx.recv().await {
             match cmsg {
                 QueueMessage::Data(pm) => {
@@ -71,6 +71,15 @@ impl BatchingQueue {
             }
         }
     }
+
+    pub fn consume_batching_queue_async(mut self) {
+        tokio::spawn(async move {
+            info!("Consuming parsed messages queue ...");
+            self.consume_queue().await;
+            info!("Done consuming parsed messages queue.");
+        });
+    }
+
 }
 
 impl MessageQueue<ParsedMessage> for BatchingQueue {
