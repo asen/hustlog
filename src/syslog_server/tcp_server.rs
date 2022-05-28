@@ -1,6 +1,6 @@
 use crate::syslog_server::lines_buffer::LinesBuffer;
 use crate::syslog_server::message_queue::MessageSender;
-use crate::{HustlogConfig, RawMessage};
+use crate::{DynError, HustlogConfig, RawMessage};
 use log::{debug, error, info, log_enabled, trace, Level};
 use std::error::Error;
 use std::fmt;
@@ -93,7 +93,7 @@ impl TcpServerConnection {
         }
     }
 
-    pub async fn process_socket(&mut self) -> Result<(), Box<dyn Error>> {
+    pub async fn process_socket(&mut self) -> Result<(), DynError> {
         loop {
             let batch = self.receive_messsages().await?;
             if batch.is_empty() {
@@ -133,7 +133,7 @@ impl TcpServerConnection {
         raw_sender: MessageSender<Vec<RawMessage>>,
         hcrc: Arc<HustlogConfig>,
         host_port: &String,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), DynError> {
         let mut intvl = interval(Duration::from_secs(hcrc.get_tick_interval()));
 
         let listener = TcpListener::bind(&host_port).await?;

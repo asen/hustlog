@@ -13,13 +13,13 @@ macro_rules! args_or_external_vec {
             if $b.$prop.is_some() {
                 let ret_ref = $b.$prop.as_ref().unwrap();
                 if ret_ref.is_empty() {
-                    let my_err: Box<dyn Error> = Box::new(ConfigError::new($err));
+                    let my_err: DynError = Box::new(ConfigError::new($err));
                     Err(my_err)
                 } else {
                     Ok(ret_ref)
                 }
             } else {
-                let my_err: Box<dyn Error> = Box::new(ConfigError::new($err));
+                let my_err: DynError = Box::new(ConfigError::new($err));
                 Err(my_err)
             }
         } else {
@@ -36,7 +36,7 @@ macro_rules! args_or_external_opt {
             if ($b.$prop.is_some()) {
                 Ok($b.$prop.as_ref().unwrap())
             } else {
-                let my_err: Box<dyn Error> = Box::new(ConfigError::new($err));
+                let my_err: DynError = Box::new(ConfigError::new($err));
                 Err(my_err)
             }
         }
@@ -90,6 +90,9 @@ macro_rules! args_or_external_bool_default {
     };
 }
 
+pub type DynError = Box<dyn Error + Send + Sync>;
+pub type DynBoxWrite = Box<dyn Write + Send + Sync>;
+
 pub enum OutputFormat {
     DEFAULT,
     SQL,
@@ -104,7 +107,7 @@ pub struct HustlogConfig {
     query: Option<String>,
 
     output: String,
-    output_format: String, //TODO
+    output_format: String,
     output_batch_size: usize,
     output_add_ddl: bool,
 
@@ -115,7 +118,7 @@ pub struct HustlogConfig {
 }
 
 impl HustlogConfig {
-    pub fn new(args: MyArgs) -> Result<HustlogConfig, Box<dyn Error>> {
+    pub fn new(args: MyArgs) -> Result<HustlogConfig, DynError> {
         let external_conf = args.get_external_conf()?;
         let schema = Self::parse_grok_schema(&args, &external_conf)?;
         let input = args_or_external_opt_default!(&args, &external_conf, input, "-");
@@ -128,7 +131,7 @@ impl HustlogConfig {
             Some(query_str_ref.to_string())
         };
         let output = args_or_external_opt_default!(&args, &external_conf, output, "-");
-        let output_format = args_or_external_opt_default!(&args, &external_conf, output, "csv");
+        let output_format = args_or_external_opt_default!(&args, &external_conf, output_format, "csv");
         let output_batch_size =
             args_or_external_opt_default!(&args, &external_conf, output_batch_size, &1000);
         let output_add_ddl =
@@ -161,7 +164,7 @@ impl HustlogConfig {
     fn parse_col_defs(
         args: &MyArgs,
         external_conf: &ExternalConfig,
-    ) -> Result<Vec<GrokColumnDef>, Box<dyn Error>> {
+    ) -> Result<Vec<GrokColumnDef>, DynError> {
         let schema_columns = args_or_external_vec!(
             &args,
             &external_conf,
@@ -217,7 +220,7 @@ impl HustlogConfig {
     fn parse_grok_schema(
         args: &MyArgs,
         external_conf: &ExternalConfig,
-    ) -> Result<GrokSchema, Box<dyn Error>> {
+    ) -> Result<GrokSchema, DynError> {
         let pattern = args_or_external_opt!(
             &args,
             &external_conf,
@@ -254,7 +257,7 @@ impl HustlogConfig {
         ))
     }
 
-    pub fn get_buf_read(&self) -> Result<Box<dyn BufRead>, Box<dyn Error>> {
+    pub fn get_buf_read(&self) -> Result<Box<dyn BufRead>, DynError> {
         let reader: Box<dyn BufRead> = if &self.input == "-" {
             Box::new(BufReader::new(io::stdin()))
         } else {
@@ -263,8 +266,8 @@ impl HustlogConfig {
         Ok(reader)
     }
 
-    pub fn get_outp(&self) -> Result<Box<dyn Write>, Box<dyn Error>> {
-        let writer: Box<dyn Write> = if &self.output == "-" {
+    pub fn get_outp(&self) -> Result<DynBoxWrite, DynError> {
+        let writer: DynBoxWrite = if &self.output == "-" {
             Box::new(BufWriter::new(io::stdout()))
         } else {
             Box::new(BufWriter::new(fs::File::create(&self.output)?))
@@ -337,7 +340,7 @@ impl HustlogConfig {
         })
     }
 
-    pub fn init_rayon_pool(&self) -> Result<(), Box<dyn Error>> {
+    pub fn init_rayon_pool(&self) -> Result<(), DynError> {
         let res = ThreadPoolBuilder::new()
             .num_threads(self.rayon_threads)
             .build_global();

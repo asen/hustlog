@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
-use std::error::Error;
 use std::fs;
 use std::io::BufReader;
+use crate::DynError;
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct ExternalConfig {
@@ -30,7 +30,7 @@ pub struct ExternalConfig {
 }
 
 impl ExternalConfig {
-    pub fn from_yaml_file(fname: &str) -> Result<ExternalConfig, Box<dyn Error>> {
+    pub fn from_yaml_file(fname: &str) -> Result<ExternalConfig, DynError> {
         let rdr = BufReader::new(fs::File::open(fname)?);
         match serde_yaml::from_reader(rdr) {
             Ok(pc) => Ok(pc),

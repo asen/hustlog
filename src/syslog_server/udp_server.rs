@@ -1,10 +1,9 @@
 use crate::syslog_server::lines_buffer::LinesBuffer;
 use crate::syslog_server::message_queue::{MessageSender, QueueMessage};
-use crate::{HustlogConfig, RawMessage};
+use crate::{DynError, HustlogConfig, RawMessage};
 use bytes::BufMut;
 use log::{debug, error, info, Level, log_enabled, trace};
 use std::collections::HashMap;
-use std::error::Error;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::net::UdpSocket;
@@ -187,7 +186,7 @@ impl UdpServerState {
         raw_sender: MessageSender<Vec<RawMessage>>,
         hcrc: Arc<HustlogConfig>,
         host_port: &String,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), DynError> {
         let socket = UdpSocket::bind(host_port).await?;
         info!(
             "Starting Hustlog UDP server listening on {} with config: {:?}",

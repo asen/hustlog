@@ -3,11 +3,10 @@
 extern crate grok;
 
 use std::collections::HashMap;
-use std::error::Error;
 use std::io::{BufRead, Write};
 use std::sync::Arc;
 
-use crate::{LineMerger, SpaceLineMerger};
+use crate::{DynError, LineMerger, SpaceLineMerger};
 use grok::{patterns, Grok, Pattern};
 
 use crate::parser::parser::*;
@@ -94,7 +93,7 @@ impl GrokSchema {
         rdr: Box<dyn BufRead>,
         use_line_merger: bool,
         log: Box<dyn Write>,
-    ) -> Result<ParserIterator, Box<dyn Error>> {
+    ) -> Result<ParserIterator, DynError> {
         let parser = GrokParser::new(self.clone())?;
         let line_merger: Option<Box<dyn LineMerger>> = if use_line_merger {
             Some(Box::new(SpaceLineMerger::new()))
@@ -127,7 +126,7 @@ pub struct GrokParser {
 }
 
 impl GrokParser {
-    pub fn new(schema: GrokSchema) -> Result<GrokParser, Box<dyn Error>> {
+    pub fn new(schema: GrokSchema) -> Result<GrokParser, DynError> {
         let mut grok = if schema.load_default {
             Grok::with_patterns()
         } else {

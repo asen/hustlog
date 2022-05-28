@@ -77,7 +77,7 @@ impl AsyncParser {
         .await;
     }
 
-    pub fn get_sender(&self) -> MessageSender<Vec<RawMessage>> {
+    pub fn clone_sender(&self) -> MessageSender<Vec<RawMessage>> {
         MessageSender::new(self.tx.clone())
     }
 }

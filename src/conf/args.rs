@@ -1,9 +1,9 @@
-use std::error::Error;
 use std::fs;
 use std::io::{self, BufWriter, Write};
 
 use crate::conf::external::ExternalConfig;
 use clap::Parser;
+use crate::DynError;
 
 #[derive(Parser, Debug)]
 #[clap(name = "hustlog")]
@@ -93,7 +93,7 @@ pub struct MyArgs {
 }
 
 impl MyArgs {
-    pub fn get_external_conf(&self) -> Result<ExternalConfig, Box<dyn Error>> {
+    pub fn get_external_conf(&self) -> Result<ExternalConfig, DynError> {
         if self.conf.is_some() {
             let pc = ExternalConfig::from_yaml_file(self.conf.as_ref().unwrap().as_str())?;
             Ok(pc)
@@ -102,7 +102,7 @@ impl MyArgs {
         }
     }
 
-    pub fn get_outp(&self) -> Result<Box<dyn Write>, Box<dyn Error>> {
+    pub fn get_outp(&self) -> Result<Box<dyn Write>, DynError> {
         let writer: Box<dyn Write> = match &self.output {
             None => Box::new(BufWriter::new(io::stdout())),
             Some(filename) => {

@@ -1,7 +1,7 @@
 // Copyright 2022 Asen Lazarov
 
-use std::error::Error;
 use std::io::Write;
+use std::sync::Arc;
 
 use clap::Parser;
 
@@ -49,7 +49,7 @@ mod syslog_server;
 //     Ok(())
 // }
 
-fn main_print_default_patterns(mut outp: Box<dyn Write>) -> Result<(), Box<dyn Error>> {
+fn main_print_default_patterns(mut outp: Box<dyn Write>) -> Result<(), DynError> {
     for (p, s) in GrokParser::default_patterns() {
         outp.write(p.as_bytes())?;
         outp.write(" ".as_bytes())?;
@@ -63,8 +63,8 @@ fn get_output_sink(
     ofrmt: OutputFormat,
     add_ddl: bool,
     outp_batch_size: usize,
-    ql_schema: QlSchema,
-    outp: Box<dyn Write>,
+    ql_schema: Arc<QlSchema>,
+    outp: DynBoxWrite,
 ) -> Box<dyn OutputSink> {
     match ofrmt {
         OutputFormat::DEFAULT => Box::new(CsvOutput::new(ql_schema, outp, add_ddl)),
@@ -84,18 +84,18 @@ fn main_process_pit(
     outp_format: OutputFormat,
     outp_batch_size: usize,
     add_ddl: bool,
-    outp: Box<dyn Write>,
-) -> Result<(), Box<dyn Error>> {
+    outp: DynBoxWrite,
+) -> Result<(), DynError> {
     // consume the parser iterator
     // if sql is provided -> apply it
     let mut query_output = if sql.is_some() {
         let ss: &str = &sql.unwrap().as_ref();
-        let mut sql_res = QlMemTable::new(&QlSchema::from(&schema));
+        let mut sql_res = QlMemTable::new(Arc::new(QlSchema::from(&schema)));
         process_sql(schema, pit, ss, Box::new(&mut sql_res))?;
         Box::new(sql_res) as Box<dyn QlInputTable>
     } else {
         // just use the iterator as input table
-        let itbl = ParserIteratorInputTable::new(pit, QlSchema::from(schema));
+        let itbl = ParserIteratorInputTable::new(pit, Arc::new(QlSchema::from(schema)));
         Box::new(itbl) as Box<dyn QlInputTable>
     };
 
@@ -122,8 +122,8 @@ fn tokio_main(hc: HustlogConfig) {
     })
 }
 
-fn st_main(conf: HustlogConfig) -> Result<(), Box<dyn Error>> {
-    let outp: Box<dyn Write> = conf.get_outp()?;
+fn st_main(conf: HustlogConfig) -> Result<(), DynError> {
+    let outp: DynBoxWrite = conf.get_outp()?;
     let log = conf.get_logger();
     let rdr = conf.get_buf_read()?;
     //println!("{:?}", args);
@@ -141,7 +141,7 @@ fn st_main(conf: HustlogConfig) -> Result<(), Box<dyn Error>> {
     )
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> Result<(), DynError> {
     let args: MyArgs = MyArgs::parse();
     //println!("ARGS: {:?}", args);
     if args.grok_list_default_patterns() {

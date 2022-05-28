@@ -1,17 +1,16 @@
 use crate::output::format::OutputSink;
 use crate::query_processor::QlRow;
-use crate::{ParserSchema, QlSchema};
-use std::error::Error;
-use std::io::Write;
+use crate::{DynBoxWrite, DynError, ParserSchema, QlSchema};
+use std::sync::Arc;
 
 pub struct CsvOutput {
-    schema: QlSchema,
-    wr: csv::Writer<Box<dyn Write>>,
+    schema: Arc<QlSchema>,
+    wr: csv::Writer<DynBoxWrite>,
     add_header: bool,
 }
 
 impl CsvOutput {
-    pub fn new(schema: QlSchema, outp: Box<dyn Write>, add_header: bool) -> Self {
+    pub fn new(schema: Arc<QlSchema>, outp: DynBoxWrite, add_header: bool) -> Self {
         Self {
             schema,
             wr: csv::Writer::from_writer(outp),
@@ -21,7 +20,7 @@ impl CsvOutput {
 }
 
 impl OutputSink for CsvOutput {
-    fn output_header(&mut self) -> Result<(), Box<dyn Error>> {
+    fn output_header(&mut self) -> Result<(), DynError> {
         if !self.add_header {
             return Ok(());
         }
@@ -39,7 +38,7 @@ impl OutputSink for CsvOutput {
         }
     }
 
-    fn output_row(&mut self, row: QlRow) -> Result<(), Box<dyn Error>> {
+    fn output_row(&mut self, row: QlRow) -> Result<(), DynError> {
         let rc_row = row.data_as_strs();
         let o = rc_row.iter().map(|x| x.as_ref()).collect::<Vec<_>>();
         let ret = self.wr.write_record(o);
@@ -50,7 +49,7 @@ impl OutputSink for CsvOutput {
         }
     }
 
-    fn flush(&mut self) -> Result<(), Box<dyn Error>> {
+    fn flush(&mut self) -> Result<(), DynError> {
         let ret = self.wr.flush();
         if ret.is_ok() {
             Ok(())

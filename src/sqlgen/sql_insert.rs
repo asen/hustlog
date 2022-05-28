@@ -1,9 +1,8 @@
 use crate::query_processor::QlRow;
-use crate::{ParsedValue, ParserSchema};
-use std::error::Error;
+use crate::{DynBoxWrite, DynError, DynParserSchema, ParsedValue};
 use std::io::Write;
 
-fn output_value_for_sql(pv: &ParsedValue, outp: &mut Box<dyn Write>) -> Result<(), Box<dyn Error>> {
+fn output_value_for_sql(pv: &ParsedValue, outp: &mut DynBoxWrite) -> Result<(), DynError> {
     match pv {
         ParsedValue::NullVal => {
             outp.write("NULL".as_bytes())?;
@@ -45,14 +44,14 @@ fn output_value_for_sql(pv: &ParsedValue, outp: &mut Box<dyn Write>) -> Result<(
 }
 
 pub struct BatchedInserts {
-    schema: Box<dyn ParserSchema>,
+    schema: DynParserSchema,
     batch_size: usize,
     buf: Vec<QlRow>,
-    outp: Box<dyn Write>,
+    outp: DynBoxWrite,
 }
 
 impl BatchedInserts {
-    pub fn new(schema: Box<dyn ParserSchema>, batch_size: usize, outp: Box<dyn Write>) -> Self {
+    pub fn new(schema: DynParserSchema, batch_size: usize, outp: DynBoxWrite) -> Self {
         Self {
             schema,
             batch_size,
@@ -61,13 +60,13 @@ impl BatchedInserts {
         }
     }
 
-    pub fn print_header_str(&mut self, s: &str) -> Result<(), Box<dyn Error>> {
+    pub fn print_header_str(&mut self, s: &str) -> Result<(), DynError> {
         self.outp.write(s.as_bytes())?;
         self.outp.write("\n".as_bytes())?;
         Ok(())
     }
 
-    pub fn add_to_batch(&mut self, row: QlRow) -> Result<(), Box<dyn Error>> {
+    pub fn add_to_batch(&mut self, row: QlRow) -> Result<(), DynError> {
         self.buf.push(row);
         if self.buf.len() >= self.batch_size {
             self.flush()?;
@@ -75,7 +74,7 @@ impl BatchedInserts {
         Ok(())
     }
 
-    pub fn flush(&mut self) -> Result<(), Box<dyn Error>> {
+    pub fn flush(&mut self) -> Result<(), DynError> {
         if self.buf.is_empty() {
             return Ok(());
         }
@@ -133,20 +132,18 @@ impl BatchedInserts {
 mod test {
     use crate::sqlgen::sql_create::SqlCreateSchema;
     use crate::sqlgen::BatchedInserts;
-    use crate::{
-        test_syslog_schema, ParserIteratorInputTable, ParserSchema, QlInputTable, QlSchema,
-    };
-    use std::error::Error;
+    use crate::{test_syslog_schema, ParserIteratorInputTable, QlInputTable, QlSchema, DynParserSchema, DynBoxWrite, DynError};
     use std::io;
     use std::io::{BufRead, BufReader, BufWriter, Write};
+    use std::sync::Arc;
 
     pub fn ql_table_to_sql(
         inp: &mut Box<dyn QlInputTable>,
-        outp: Box<dyn Write>,
+        outp: DynBoxWrite,
         batch_size: usize,
-    ) -> Result<(), Box<dyn Error>> {
-        let ql_schema: QlSchema = inp.ql_schema().clone();
-        let ql_schema: Box<dyn ParserSchema> = Box::new(ql_schema);
+    ) -> Result<(), DynError> {
+        let ql_schema: DynParserSchema = inp.ql_schema().clone();
+        // let ql_schema: DynParserSchema = Arc::from();
         let mut sql_inserts = BatchedInserts::new(ql_schema, batch_size, outp);
         while let Some(row) = inp.read_row()? {
             sql_inserts.add_to_batch(row)?;
@@ -165,14 +162,14 @@ mod test {
     fn get_logger() -> Box<dyn Write> {
         Box::new(BufWriter::new(std::io::stderr()))
     }
-    fn get_stdout() -> Box<dyn Write> {
+    fn get_stdout() -> DynBoxWrite {
         Box::new(BufWriter::new(io::stdout()))
     }
 
     #[test]
     fn test_sql_gen1() {
         let schema = test_syslog_schema();
-        let ql_schema = QlSchema::from(&schema);
+        let ql_schema = Arc::new(QlSchema::from(&schema));
         let ddl = SqlCreateSchema::from_ql_schema(&ql_schema);
         let s = ddl.get_create_sql();
         let mut out = get_stdout();
@@ -182,7 +179,7 @@ mod test {
         let pit = schema
             .create_parser_iterator(rdr, false, get_logger())
             .unwrap();
-        let itbl = ParserIteratorInputTable::new(pit, QlSchema::from(&schema));
+        let itbl = ParserIteratorInputTable::new(pit, ql_schema);
         let mut itbl_box = Box::new(itbl) as Box<dyn QlInputTable>;
         ql_table_to_sql(&mut itbl_box, out, 2).unwrap();
     }

@@ -119,6 +119,8 @@ pub struct QlRow {
     data: Vec<(Arc<str>, ParsedValue)>,
 }
 
+pub type QlRowBatch = Vec<QlRow>;
+
 impl QlRow {
     pub fn new(raw: Option<RawMessage>, data: Vec<(Arc<str>, ParsedValue)>) -> Self {
         Self { raw, data }

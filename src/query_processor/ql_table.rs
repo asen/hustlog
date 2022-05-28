@@ -3,23 +3,22 @@ use crate::query_processor::ql_eval_expr::{eval_expr, eval_integer_expr, LazyCon
 use crate::query_processor::ql_schema::{
     get_res_cols, QlRow, QlRowContext, QlSchema, QlSelectCols, QlSelectItem,
 };
-use crate::query_processor::QueryError;
+use crate::query_processor::{QlRowBatch, QueryError};
 use crate::query_processor::SqlSelectQuery;
-use crate::{GrokSchema, ParsedMessage, ParsedValue, ParserIterator, RawMessage};
+use crate::{DynError, GrokSchema, ParsedValue, ParserIterator, RawMessage};
 use sqlparser::ast::{Expr, Value};
 use std::cmp::{min, Ordering};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::error::Error;
 use std::sync::Arc;
 
 pub trait QlInputTable {
-    fn read_row(&mut self) -> Result<Option<QlRow>, Box<dyn Error>>;
-    fn ql_schema(&self) -> &QlSchema;
+    fn read_row(&mut self) -> Result<Option<QlRow>, DynError>;
+    fn ql_schema(&self) -> &Arc<QlSchema>;
 }
 
 pub trait QlOutputTable {
-    fn write_row(&mut self, row: QlRow) -> Result<(), Box<dyn Error>>;
+    fn write_row(&mut self, row: QlRow) -> Result<(), DynError>;
     fn num_written(&self) -> usize;
     fn ordered_slice(
         &mut self,
@@ -27,22 +26,22 @@ pub trait QlOutputTable {
         offset: i64,
         order_by_exprs: &Vec<(usize, bool)>,
     ) -> Box<&dyn QlInputTable>;
-    fn set_schema(&mut self, new_schema: QlSchema);
+    fn set_schema(&mut self, new_schema: Arc<QlSchema>);
 }
 
 pub struct ParserIteratorInputTable {
     pit: ParserIterator,
-    ql_schema: QlSchema,
+    ql_schema: Arc<QlSchema>,
 }
 
 impl ParserIteratorInputTable {
-    pub fn new(pit: ParserIterator, ql_schema: QlSchema) -> Self {
+    pub fn new(pit: ParserIterator, ql_schema: Arc<QlSchema>) -> Self {
         Self { pit, ql_schema }
     }
 }
 
 impl QlInputTable for ParserIteratorInputTable {
-    fn read_row(&mut self) -> Result<Option<QlRow>, Box<dyn Error>> {
+    fn read_row(&mut self) -> Result<Option<QlRow>, DynError> {
         let pm = self.pit.next();
         if pm.is_none() {
             return Ok(None);
@@ -53,49 +52,49 @@ impl QlInputTable for ParserIteratorInputTable {
         )))
     }
 
-    fn ql_schema(&self) -> &QlSchema {
+    fn ql_schema(&self) -> &Arc<QlSchema> {
         &self.ql_schema
     }
 }
 
 pub struct QlMemTable {
-    schema: QlSchema,
+    schema: Arc<QlSchema>,
     buf: Vec<QlRow>,
     written: usize,
     read: usize,
 }
 
 impl QlMemTable {
-    pub fn new(schema: &QlSchema) -> Self {
+    pub fn new(schema: Arc<QlSchema>) -> Self {
         Self {
-            schema: schema.clone(),
+            schema: schema,
             buf: Vec::new(),
             written: 0,
             read: 0,
         }
     }
 
-    pub fn from_parsed_messages_vec(schema: QlSchema, vec: Vec<ParsedMessage>) -> Self {
-        let vec_size = vec.len();
-        let buf = vec
-            .into_iter()
-            .map(|pm| QlRow::from_parsed_message(pm, &schema))
-            .collect::<Vec<_>>();
+    pub fn from_rows_batch(schema: Arc<QlSchema>, batch: QlRowBatch) -> Self {
         Self {
             schema,
-            buf,
-            written: vec_size,
+            written: batch.len(),
+            buf: batch,
             read: 0,
         }
     }
 
+    #[cfg(test)]
     pub fn get_rows(&self) -> &Vec<QlRow> {
         &self.buf
+    }
+
+    pub fn consume_rows(self) -> QlRowBatch {
+        self.buf
     }
 }
 
 impl QlOutputTable for QlMemTable {
-    fn write_row(&mut self, row: QlRow) -> Result<(), Box<dyn Error>> {
+    fn write_row(&mut self, row: QlRow) -> Result<(), DynError> {
         self.buf.push(row);
         self.written += 1;
         Ok(())
@@ -105,7 +104,7 @@ impl QlOutputTable for QlMemTable {
         self.written
     }
 
-    fn set_schema(&mut self, new_schema: QlSchema) {
+    fn set_schema(&mut self, new_schema: Arc<QlSchema>) {
         self.schema = new_schema;
     }
 
@@ -166,7 +165,7 @@ impl QlOutputTable for QlMemTable {
 }
 
 impl QlInputTable for QlMemTable {
-    fn read_row(&mut self) -> Result<Option<QlRow>, Box<dyn Error>> {
+    fn read_row(&mut self) -> Result<Option<QlRow>, DynError> {
         let ret = self.buf.get(self.read);
         if ret.is_none() {
             return Ok(None);
@@ -176,30 +175,30 @@ impl QlInputTable for QlMemTable {
         Ok(Some(ret))
     }
 
-    fn ql_schema(&self) -> &QlSchema {
+    fn ql_schema(&self) -> &Arc<QlSchema> {
         &self.schema
     }
 }
 
-struct QlParserIteratorInputTable<'a> {
-    schema: &'a QlSchema,
+struct QlParserIteratorInputTable {
+    schema: Arc<QlSchema>,
     pit: ParserIterator,
 }
 
-impl QlInputTable for QlParserIteratorInputTable<'_> {
-    fn read_row(&mut self) -> Result<Option<QlRow>, Box<dyn Error>> {
+impl QlInputTable for QlParserIteratorInputTable {
+    fn read_row(&mut self) -> Result<Option<QlRow>, DynError> {
         let pit_next = self.pit.next();
         if pit_next.is_none() {
             return Ok(None);
         }
         let pm = pit_next.unwrap();
 
-        let ret = QlRow::from_parsed_message(pm, self.schema);
+        let ret = QlRow::from_parsed_message(pm, self.schema.as_ref());
         Ok(Some(ret))
     }
 
-    fn ql_schema(&self) -> &QlSchema {
-        self.schema
+    fn ql_schema(&self) -> &Arc<QlSchema> {
+        &self.schema
     }
 }
 
@@ -255,7 +254,7 @@ impl QlGroupByContext {
         limit: Option<usize>,
         offset: i64,
         order_by: &Vec<(usize, bool)>,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), DynError> {
         let mut my_offset = offset;
         let has_order_by = !order_by.is_empty();
         for gb_key_ref in &self.keys_ordered {
@@ -359,16 +358,16 @@ fn eval_lazy_ctxs(
 }
 
 pub fn eval_query(
-    select_c: &QlSelectCols,
-    where_c: &Expr,
+    select_c: Arc<QlSelectCols>,
+    where_c: Arc<Expr>,
     limit: Option<usize>,
     offset: i64,
-    group_by_exprs: &Vec<usize>,
-    order_by_exprs: &Vec<(usize, bool)>,
+    group_by_exprs: Arc<Vec<usize>>,
+    order_by_exprs: Arc<Vec<(usize, bool)>>,
     inp: &mut Box<&mut dyn QlInputTable>,
     outp: &mut Box<&mut dyn QlOutputTable>,
-) -> Result<(), Box<dyn Error>> {
-    let has_agg = select_c.validate_group_by_cols(group_by_exprs)?;
+) -> Result<(), DynError> {
+    let has_agg = select_c.validate_group_by_cols(group_by_exprs.as_ref())?;
     let has_order_by = !order_by_exprs.is_empty();
     let needs_raw = select_c.has_raw_message();
     let mut gb_context = QlGroupByContext::new();
@@ -378,13 +377,13 @@ pub fn eval_query(
         let raw: Option<RawMessage> = if needs_raw { irow.raw().clone() } else { None };
         let static_ctx = QlRowContext::from_row(&irow);
         let mut lazy_ctx = select_c.lazy_context();
-        let where_result = eval_expr(where_c, &static_ctx, &mut lazy_ctx)?
+        let where_result = eval_expr(where_c.as_ref(), &static_ctx, &mut lazy_ctx)?
             .as_bool()
             .unwrap_or(false);
         if where_result {
             //row matches
             // eval our lazy contexts
-            let outp_vals = eval_lazy_ctxs(select_c, &static_ctx, &mut lazy_ctx)?;
+            let outp_vals = eval_lazy_ctxs(select_c.as_ref(), &static_ctx, &mut lazy_ctx)?;
             if has_agg {
                 // handle group by stuff
                 let agg_exprs = select_c.agg_exprs();
@@ -413,11 +412,11 @@ pub fn eval_query(
         }
     }
     if has_agg {
-        gb_context.output_to_table(&select_c, outp, limit, offset, order_by_exprs)?;
+        gb_context.output_to_table(&select_c, outp, limit, offset, order_by_exprs.as_ref())?;
     } else if has_order_by {
         // TODO apply order
         // then offset and limit
-        outp.ordered_slice(limit, offset, order_by_exprs);
+        outp.ordered_slice(limit, offset, order_by_exprs.as_ref());
     }
     Ok(())
 }
@@ -425,7 +424,7 @@ pub fn eval_query(
 pub fn get_group_by_exprs(
     qry: &SqlSelectQuery,
     mut empty_lazy_context: &mut LazyContext,
-) -> Result<Vec<usize>, Box<dyn Error>> {
+) -> Result<Vec<usize>, DynError> {
     let mut group_by_exprs = Vec::new(); // TODO
     for (ix, gbe) in qry.get_select().group_by.iter().enumerate() {
         let num = eval_integer_expr(
@@ -448,7 +447,7 @@ pub fn get_group_by_exprs(
 pub fn get_order_by_exprs(
     qry: &SqlSelectQuery,
     mut empty_lazy_context: &mut LazyContext,
-) -> Result<Vec<(usize, bool)>, Box<dyn Error>> {
+) -> Result<Vec<(usize, bool)>, DynError> {
     let mut order_by_exprs = Vec::new(); // TODO
     for (ix, obe) in qry.get_order_by().iter().enumerate() {
         let ex = &obe.expr;
@@ -478,12 +477,12 @@ pub fn process_sql(
     pit: ParserIterator,
     query: &str,
     mut out_table: Box<&mut dyn QlOutputTable>,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<(), DynError> {
     //println!("process_sql: {}", schema.columns().len());
-    let qry = SqlSelectQuery::new(query)?;
-    let ql_schema = QlSchema::from(schema);
+    let qry = Arc::new(SqlSelectQuery::new(query)?);
+    let ql_schema = Arc::new(QlSchema::from(schema));
     let mut in_table = QlParserIteratorInputTable {
-        schema: &ql_schema,
+        schema: Arc::clone(&ql_schema),
         pit,
     };
     let mut in_table_ref: Box<&mut dyn QlInputTable> = Box::new(&mut in_table);
@@ -492,24 +491,31 @@ pub fn process_sql(
     // );
     // let mut out_table_ref: Box<&mut dyn QlOutputTable> = Box::new(&mut out_table);
     let res_cols = get_res_cols(schema, &qry);
-    let select_c = QlSelectCols::new(res_cols);
-    out_table.set_schema(select_c.to_out_schema(&ql_schema)?);
+    let select_c = Arc::new(QlSelectCols::new(res_cols));
+    out_table.set_schema(Arc::new(select_c.to_out_schema(ql_schema.as_ref())?));
     let true_expr = Expr::Value(Value::Boolean(true));
-    let where_c: &Expr = &qry.get_select().selection.as_ref().unwrap_or(&true_expr);
+    let where_c: Arc<Expr> = Arc::from(
+        qry
+            .get_select()
+            .selection
+            .as_ref()
+            .unwrap_or(&true_expr)
+            .clone()
+    );
     let mut empty_lazy_context = LazyContext::empty();
     let limit = get_limit(&qry, &mut empty_lazy_context)?;
     let offset = get_offset(&qry, &mut empty_lazy_context)?;
 
     //println!("process_sql: {}", select_c.cols().len());
-    let group_by_exprs = get_group_by_exprs(&qry, &mut empty_lazy_context)?;
-    let order_by_exprs = get_order_by_exprs(&qry, &mut empty_lazy_context)?;
+    let group_by_exprs = Arc::new(get_group_by_exprs(&qry, &mut empty_lazy_context)?);
+    let order_by_exprs = Arc::new(get_order_by_exprs(&qry, &mut empty_lazy_context)?);
     eval_query(
-        &select_c,
+        select_c,
         where_c,
         limit,
         offset,
-        &group_by_exprs,
-        &order_by_exprs,
+        group_by_exprs,
+        order_by_exprs,
         &mut in_table_ref,
         &mut out_table,
     )?;
@@ -522,11 +528,11 @@ pub fn process_sql(
 
 #[cfg(test)]
 mod test {
-    use std::error::Error;
     use std::io::{BufRead, BufReader, BufWriter, Write};
+    use std::sync::Arc;
 
     use crate::parser::test_syslog_schema;
-    use crate::{QlMemTable, QlSchema};
+    use crate::{DynError, QlMemTable, QlSchema};
 
     use super::process_sql;
 
@@ -573,12 +579,12 @@ mod test {
     //     println!("RESULT: {:?}", ret);
     // }
 
-    fn test_query(query: &str, input: &'static str) -> Result<Box<QlMemTable>, Box<dyn Error>> {
+    fn test_query(query: &str, input: &'static str) -> Result<Box<QlMemTable>, DynError> {
         let schema = test_syslog_schema();
         let log = get_logger();
         let rdr: Box<dyn BufRead> = Box::new(BufReader::new(input.as_bytes()));
         let pit = schema.create_parser_iterator(rdr, false, log)?;
-        let mut rrt = QlMemTable::new(&QlSchema::from(&schema));
+        let mut rrt = QlMemTable::new(Arc::new(QlSchema::from(&schema)));
         let res = process_sql(&schema, pit, query, Box::new(&mut rrt));
         if res.is_ok() {
             for r in rrt.get_rows() {

@@ -28,3 +28,5 @@ pub trait ParserSchema {
     fn name(&self) -> &str;
     fn col_defs(&self) -> Vec<&ParserColDef>;
 }
+
+pub type DynParserSchema = Arc<dyn ParserSchema + Send + Sync>;

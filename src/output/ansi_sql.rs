@@ -1,9 +1,8 @@
 use crate::output::format::OutputSink;
 use crate::query_processor::QlRow;
 use crate::sqlgen::BatchedInserts;
-use crate::{QlSchema, SqlCreateSchema};
-use std::error::Error;
-use std::io::Write;
+use crate::{DynBoxWrite, DynError, QlSchema, SqlCreateSchema};
+use std::sync::Arc;
 
 pub struct AnsiSqlOutput {
     ddl: Option<SqlCreateSchema>,
@@ -12,19 +11,19 @@ pub struct AnsiSqlOutput {
 }
 
 impl AnsiSqlOutput {
-    pub fn new(schema: QlSchema, add_ddl: bool, batch_size: usize, outp: Box<dyn Write>) -> Self {
+    pub fn new(schema: Arc<QlSchema>, add_ddl: bool, batch_size: usize, outp: DynBoxWrite) -> Self {
         let ddl = if add_ddl {
             Some(SqlCreateSchema::from_ql_schema(&schema))
         } else {
             None
         };
-        let inserts = BatchedInserts::new(Box::new(schema), batch_size, outp);
+        let inserts = BatchedInserts::new(schema, batch_size, outp);
         Self { ddl, inserts }
     }
 }
 
 impl OutputSink for AnsiSqlOutput {
-    fn output_header(&mut self) -> Result<(), Box<dyn Error>> {
+    fn output_header(&mut self) -> Result<(), DynError> {
         if self.ddl.is_none() {
             return Ok(());
         }
@@ -34,11 +33,11 @@ impl OutputSink for AnsiSqlOutput {
         Ok(())
     }
 
-    fn output_row(&mut self, row: QlRow) -> Result<(), Box<dyn Error>> {
+    fn output_row(&mut self, row: QlRow) -> Result<(), DynError> {
         self.inserts.add_to_batch(row)
     }
 
-    fn flush(&mut self) -> Result<(), Box<dyn Error>> {
+    fn flush(&mut self) -> Result<(), DynError> {
         self.inserts.flush()
     }
 }

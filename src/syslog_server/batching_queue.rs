@@ -1,29 +1,38 @@
-use crate::syslog_server::batch_processor::BatchProcessor;
 use crate::syslog_server::message_queue::{MessageQueue, MessageSender, QueueMessage};
-use crate::ParsedMessage;
+use crate::{ParsedMessage, QlSchema};
 use log::{error, info};
 use std::sync::Arc;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use crate::query_processor::{QlRow, QlRowBatch};
 
 pub struct BatchingQueue {
     tx: UnboundedSender<QueueMessage<ParsedMessage>>,
     rx: UnboundedReceiver<QueueMessage<ParsedMessage>>,
     buf: Vec<ParsedMessage>,
+    schema: Arc<QlSchema>,
     batch_size: usize,
-    batch_processor: Arc<dyn BatchProcessor + Send + Sync>,
+    batch_sender: MessageSender<QlRowBatch>,
 }
 
 impl BatchingQueue {
-    pub fn new(batch_size: usize, batch_processor: Arc<dyn BatchProcessor + Send + Sync>) -> Self {
+    fn new(schema: Arc<QlSchema>, batch_size: usize, batch_sender: MessageSender<QlRowBatch>) -> Self {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         let buf = Vec::with_capacity(batch_size);
         Self {
             tx,
             rx,
             buf,
+            schema,
             batch_size,
-            batch_processor,
+            batch_sender,
         }
+    }
+
+    pub fn wrap_output(schema: Arc<QlSchema>, batch_size: usize, batch_sender: MessageSender<QlRowBatch>) -> MessageSender<ParsedMessage>{
+        let batching_queue = BatchingQueue::new(schema, batch_size, batch_sender);
+        let parsed_sender = batching_queue.clone_sender();
+        batching_queue.consume_batching_queue_async();
+        parsed_sender
     }
 
     fn batch_message(&mut self, pm: ParsedMessage) -> Option<Vec<ParsedMessage>> {
@@ -40,11 +49,15 @@ impl BatchingQueue {
     }
 
     async fn process_batch(&mut self, batch: Vec<ParsedMessage>) {
-        let my_bp = Arc::clone(&self.batch_processor);
+        let my_sender = self.batch_sender.clone();
+        let my_schema = Arc::clone(&self.schema);
         tokio_rayon::spawn_fifo(move || {
-            //if let Err(err) = my_bp.lock().unwrap().process_batch(batch)
-            if let Err(err) = my_bp.process_batch(batch) {
-                error!("Error processing batch: {}", err);
+            let mut to_send = Vec::with_capacity(batch.len());
+            for pm in batch {
+                to_send.push(QlRow::from_parsed_message(pm, my_schema.as_ref()))
+            }
+            if let Err(err) = my_sender.send(to_send) {
+                error!("Error sending batch downstream: {}", err);
             }
         })
         .await
@@ -72,7 +85,7 @@ impl BatchingQueue {
         }
     }
 
-    pub fn consume_batching_queue_async(mut self) {
+    fn consume_batching_queue_async(mut self) {
         tokio::spawn(async move {
             info!("Consuming parsed messages queue ...");
             self.consume_queue().await;

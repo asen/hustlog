@@ -1,41 +1,61 @@
-use crate::syslog_server::batch_processor::{BatchProcessor, DummyBatchProcessor};
 use crate::syslog_server::batching_queue::BatchingQueue;
-use crate::syslog_server::message_queue::{MessageQueue, MessageSender};
+use crate::syslog_server::message_queue::MessageSender;
 use crate::syslog_server::async_parser::AsyncParser;
 use crate::syslog_server::sql_batch_processor::SqlBatchProcessor;
 use crate::syslog_server::tcp_server::{ConnectionError, TcpServerConnection};
 use crate::syslog_server::udp_server::UdpServerState;
-use crate::{GrokParser, HustlogConfig, RawMessage};
-use log::info;
-use std::error::Error;
+use crate::{AnsiSqlOutput, CsvOutput, DynError, GrokParser, HustlogConfig, OutputFormat, QlSchema, RawMessage};
+use log::{debug, info};
 use std::sync::Arc;
+use tokio::sync::Mutex;
+use crate::syslog_server::output_processor::{DynOutputSink, OutputProcessor};
 
 // Create and wire the processing pipeline
 fn create_batch_processor(
     hcrc: &Arc<HustlogConfig>,
-) -> Result<MessageSender<Vec<RawMessage>>, Box<dyn Error>> {
+) -> Result<MessageSender<Vec<RawMessage>>, DynError> {
     let schema = hcrc.get_grok_schema();
-    // TODO use proper processor, depending on "output" config
-    //let batch_processor: Arc<Mutex<dyn BatchProcessor + Send>> = Arc::new(Mutex::new(DummyBatchProcessor{}));
-    let batch_processor: Arc<dyn BatchProcessor + Send + Sync> = if hcrc.query().is_some() {
-        Arc::new(SqlBatchProcessor::new(
-            hcrc.query().as_ref().unwrap().as_str(),
-            schema,
-        )?)
+    let ql_input_schema = Arc::new(QlSchema::from(&schema));
+    let mut sql_processor: Option<SqlBatchProcessor> = None;
+    let ql_output_schema = if hcrc.query().is_some() {
+        sql_processor = Some(
+            SqlBatchProcessor::new(
+                hcrc.query().as_ref().unwrap().as_str(),
+                schema,
+            )?
+        );
+        sql_processor.as_ref().unwrap().get_output_schema().clone()
     } else {
-        Arc::new(DummyBatchProcessor {})
+        ql_input_schema.clone()
     };
-    let batching_queue = BatchingQueue::new(hcrc.output_batch_size(), batch_processor);
-    let parsed_sender = batching_queue.clone_sender();
-    batching_queue.consume_batching_queue_async();
+    let outp_wr = hcrc.get_outp()?;
+    let sink: DynOutputSink = match hcrc.output_format() {
+        OutputFormat::DEFAULT => {
+            debug!("Using default (CSV) output");
+            Arc::new(Mutex::new(CsvOutput::new(
+                ql_output_schema.clone(), outp_wr, hcrc.output_add_ddl()
+            )))
+        }
+        OutputFormat::SQL => {
+            debug!("Using SQL output");
+            Arc::new(Mutex::new(AnsiSqlOutput::new(
+                ql_output_schema.clone(), hcrc.output_add_ddl(), hcrc.output_batch_size(), outp_wr
+            )))
+        }
+    };
+    let mut output_sender = OutputProcessor::wrap_sink(sink);
+    if sql_processor.is_some() {
+        output_sender = sql_processor.unwrap().wrap_sender(output_sender)?;
+    }
+    let parsed_sender = BatchingQueue::wrap_output(ql_output_schema, hcrc.output_batch_size(), output_sender);
     let grok_parser = GrokParser::new(schema.clone())?;
     let async_parser = AsyncParser::new(parsed_sender, Arc::from(grok_parser));
-    let raw_sender = async_parser.get_sender();
+    let raw_sender = async_parser.clone_sender();
     async_parser.consume_parser_queue_async();
     Ok(raw_sender)
 }
 
-pub async fn server_main(hc: &HustlogConfig) -> Result<(), Box<dyn Error>> {
+pub async fn server_main(hc: &HustlogConfig) -> Result<(), DynError> {
     let sc = match hc.get_syslog_server_config() {
         Ok(x) => Ok(x),
         Err(ce) => Err(Box::new(ce)),
