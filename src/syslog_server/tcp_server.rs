@@ -100,7 +100,7 @@ impl TcpServerConnection {
                 break;
             }
             if log_enabled!(Level::Trace) {
-                trace!("RECEIVED MESSAGES BATCH: ({}) {:?}", batch.len(), batch)
+                trace!("RECEIVED MESSAGES BATCH: ({}) first={:?}", batch.len(), batch.first())
             }
             self.raw_sender.send(batch)?
         }

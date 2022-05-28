@@ -4,7 +4,7 @@ use crate::syslog_server::async_parser::AsyncParser;
 use crate::syslog_server::sql_batch_processor::SqlBatchProcessor;
 use crate::syslog_server::tcp_server::{ConnectionError, TcpServerConnection};
 use crate::syslog_server::udp_server::UdpServerState;
-use crate::{AnsiSqlOutput, CsvOutput, DynError, GrokParser, HustlogConfig, OutputFormat, QlSchema, RawMessage};
+use crate::{AnsiSqlOutput, CsvOutput, DynError, HustlogConfig, OutputFormat, QlSchema, RawMessage};
 use log::{debug, info};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -47,11 +47,8 @@ fn create_batch_processor(
     if sql_processor.is_some() {
         output_sender = sql_processor.unwrap().wrap_sender(output_sender)?;
     }
-    let parsed_sender = BatchingQueue::wrap_output(ql_output_schema, hcrc.output_batch_size(), output_sender);
-    let grok_parser = GrokParser::new(schema.clone())?;
-    let async_parser = AsyncParser::new(parsed_sender, Arc::from(grok_parser));
-    let raw_sender = async_parser.clone_sender();
-    async_parser.consume_parser_queue_async();
+    let parsed_sender = BatchingQueue::wrap_output(ql_input_schema, hcrc.output_batch_size(), output_sender);
+    let raw_sender = AsyncParser::wrap_parsed_sender(parsed_sender, schema.clone())?;
     Ok(raw_sender)
 }
 

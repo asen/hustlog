@@ -49,6 +49,9 @@ impl BatchingQueue {
     }
 
     async fn process_batch(&mut self, batch: Vec<ParsedMessage>) {
+        if batch.is_empty() {
+            return;
+        }
         let my_sender = self.batch_sender.clone();
         let my_schema = Arc::clone(&self.schema);
         tokio_rayon::spawn_fifo(move || {
