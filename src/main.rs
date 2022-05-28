@@ -22,32 +22,6 @@ mod query_processor;
 mod sqlgen;
 mod syslog_server;
 
-// fn print_result_table(
-//     mut rt: Box<dyn QlInputTable>,
-//     out: &mut Box<dyn Write>,
-//     sep: &str,
-// ) -> Result<(), Box<dyn Error>> {
-//     let mut i = 0;
-//     while let Some(r) = rt.read_row()? {
-//         i += 1;
-//         let istr = format!("({}) ", i);
-//         out.write(istr.as_bytes())?;
-//         out.write("COMPUTED:".as_bytes())?;
-//         for (cn, cv) in r.data() {
-//             out.write(sep.as_bytes())?;
-//             out.write(cn.as_bytes())?;
-//             out.write("=".as_bytes())?;
-//             out.write(cv.to_rc_str().as_bytes())?;
-//         }
-//
-//         out.write("\nRAW: ".as_bytes())?;
-//         if r.raw().is_some() {
-//             out.write(r.raw().as_ref().unwrap().as_str().as_bytes())?;
-//         };
-//         out.write("\n".as_bytes())?;
-//     }
-//     Ok(())
-// }
 
 fn main_print_default_patterns(mut outp: Box<dyn Write>) -> Result<(), DynError> {
     for (p, s) in GrokParser::default_patterns() {
