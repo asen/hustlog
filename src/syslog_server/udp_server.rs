@@ -1,12 +1,16 @@
 use crate::syslog_server::lines_buffer::LinesBuffer;
 use crate::syslog_server::message_queue::{MessageSender, QueueMessage};
-use crate::RawMessage;
+use crate::{HustlogConfig, RawMessage};
 use bytes::BufMut;
-use log::{debug, error, info};
+use log::{debug, error, info, Level, log_enabled, trace};
 use std::collections::HashMap;
+use std::error::Error;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tokio::net::UdpSocket;
+use tokio::signal;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::time::interval;
 
 fn system_time_now() -> u64 {
     SystemTime::now()
@@ -167,7 +171,7 @@ impl UdpServerState {
         }
     }
 
-    pub fn consume_udp_server_state_queue_async(mut self) {
+    pub fn consume_udp_data_queue_async(mut self) {
         tokio::spawn(async move {
             info!("Consuming Udp Server State messages queue ...");
             self.consume_queue().await;
@@ -175,7 +179,61 @@ impl UdpServerState {
         });
     }
 
-    pub fn get_sender(&self) -> MessageSender<UdpData> {
+    pub fn clone_sender(&self) -> MessageSender<UdpData> {
         MessageSender::new(self.tx.clone())
+    }
+
+    pub async fn udp_server_main(
+        raw_sender: MessageSender<Vec<RawMessage>>,
+        hcrc: Arc<HustlogConfig>,
+        host_port: &String,
+    ) -> Result<(), Box<dyn Error>> {
+        let socket = UdpSocket::bind(host_port).await?;
+        info!(
+            "Starting Hustlog UDP server listening on {} with config: {:?}",
+            &host_port, hcrc
+        );
+        let mut buf = vec![0; 64 * 1024]; //max UDP packet is 64K
+        let server_state =
+            UdpServerState::new(raw_sender, hcrc.get_idle_timeout(), hcrc.merge_multi_line());
+        let udp_data_sender = server_state.clone_sender();
+        server_state.consume_udp_data_queue_async();
+
+        let mut intvl = interval(Duration::from_secs(hcrc.get_tick_interval()));
+        loop {
+            let udp_data_sender = udp_data_sender.clone();
+            tokio::select! {
+                _ = signal::ctrl_c() => {
+                    info!("SIGTERM received, flushing buffers ...");
+                    udp_data_sender.shutdown()?; //this does flush internally
+                    break
+                }
+                _tick = intvl.tick() => {
+                    if log_enabled!(Level::Trace) {
+                        trace!("TICK");
+                    }
+                    udp_data_sender.flush()?;
+                }
+                res = socket.recv_from(&mut buf) => {
+                    match res {
+                        Ok(ok_res) => {
+                            let (rcvd, rcvd_from) = ok_res;
+                            let data = Vec::from(&buf[0..rcvd]);
+                            for x in &mut buf[0..rcvd] {
+                                *x = 0
+                            }
+                            let rcvd_from = rcvd_from.to_string();
+                            udp_data_sender.send(UdpData::new(Arc::from(rcvd_from.as_str()), data))?;
+                        },
+                        Err(err_res) => {
+                            error!("socket.recv_from returned error: {:?}", err_res);
+                            return Err(Box::new(err_res))
+                        }
+                    }
+
+                }
+            }
+        }
+        Ok(())
     }
 }

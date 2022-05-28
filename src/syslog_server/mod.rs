@@ -6,8 +6,8 @@ mod server_config;
 mod server_main;
 mod async_parser;
 mod sql_batch_processor;
-mod tcp_connection;
-mod udp_stream;
+mod tcp_server;
+mod udp_server;
 
 pub use server_config::*;
 pub use server_main::*;
