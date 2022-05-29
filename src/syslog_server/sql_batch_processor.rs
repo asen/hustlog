@@ -143,7 +143,7 @@ impl SqlBatchProcessor {
                 }
                 QueueMessage::Shutdown => {
                     info!("Shutdown message received");
-                    if let Err(err) = self.output_sender.as_ref().unwrap().flush() {
+                    if let Err(err) = self.output_sender.as_ref().unwrap().shutdown() {
                         error!("Failed to flush output sink, aborting: {:?}", err);
                         break;
                     }

@@ -90,6 +90,9 @@ impl BatchingQueue {
                     info!("Shutdown message received");
                     let batch = self.flush();
                     self.process_batch(batch).await;
+                    if let Err(err) = self.batch_sender.shutdown() {
+                        error!("Failed to send shutdown message to batch_sender: {:?}", err)
+                    }
                     break;
                 }
             }

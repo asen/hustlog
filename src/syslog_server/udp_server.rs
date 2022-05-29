@@ -164,6 +164,9 @@ impl UdpServerState {
                 QueueMessage::Shutdown => {
                     let flushed = self.flush(0).await; //everything is expired when shutting down
                     info!("Shutdown message received: flushed={}", flushed);
+                    if let Err(err) = self.parser_tx.shutdown() {
+                        error!("Faailed to send shutdown message to parser: {:?}", err)
+                    };
                     break;
                 }
             }
