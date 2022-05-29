@@ -1,6 +1,5 @@
 use log::{error, info};
 use sqlparser::ast::{Expr, Value};
-use std::error::Error;
 use std::sync::Arc;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
@@ -86,7 +85,7 @@ impl SqlBatchProcessor {
     async fn execute_query_async(
         &self,
         batch: QlRowBatch,
-    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    ) -> Result<(), DynError> {
         let mut input_tabe = QlMemTable::from_rows_batch(self.input_schema.clone(), batch);
         let mut output_table = QlMemTable::new(self.output_schema.clone());
         let select_cols = Arc::clone(&self.select_cols);

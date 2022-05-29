@@ -342,6 +342,14 @@ impl QlSelectCols {
     }
 }
 
+fn get_select_expr_name(expr: &Expr) -> Option<String> {
+    if let Expr::Identifier(idt) = expr {
+        Some(idt.value.clone())
+    } else {
+        None
+    }
+}
+
 fn get_res_col(name: &str, expr: &Expr) -> (Arc<str>, QlSelectItem) {
     let my_name = Arc::from(name);
     let agg = get_agg_expr(&my_name, expr);
@@ -365,50 +373,53 @@ pub fn get_res_cols(_schema: &GrokSchema, qry: &SqlSelectQuery) -> Vec<QlSelectI
     selection
         .iter()
         .enumerate()
-        .flat_map(|(i, x)| match x {
-            SelectItem::UnnamedExpr(expr) => {
-                let my_name = i.to_string();
-                let t = get_res_col(my_name.as_str(), expr);
-                vec![t.1]
-            }
-            SelectItem::ExprWithAlias { expr, alias } => {
-                let t = get_res_col(alias.value.as_str(), expr);
-                vec![t.1]
-            }
-            SelectItem::QualifiedWildcard(wc) => {
-                let my_name: Arc<str> = Arc::from(object_name_to_string(wc).as_str());
-                vec![
-                    //(
-                    //my_name.clone(),
-                    QlSelectItem::LazyExpr(LazyExpr::err(
-                        my_name.clone(),
-                        QueryError::not_supported("SelectItem::QualifiedWildcard"),
-                    )),
-                    //)
-                ]
-            }
-            SelectItem::Wildcard => {
-                // let vec = schema
-                //     .columns()
-                //     .iter()
-                //     .map(|cd| {
-                //         let col_name: Rc<str> = Rc::from(cd.col_name().as_str());
-                //         (
-                //             col_name.clone(),
-                //             QlSelectItem::LazyExpr(LazyExpr::new(
-                //                 col_name.clone(),
-                //                 &Expr::Identifier(Ident::new(col_name.to_string())))),
-                //         )
-                //     })
-                //     .collect::<Vec<_>>();
-                // vec
-                //let my_name = i.to_string();
-                vec![
-                    //(
-                    //Rc::from(my_name.as_str()),
-                    QlSelectItem::RawMessage,
-                    //)
-                ]
+        .flat_map(|(i, x)| {
+            let i = i + 1;
+            match x {
+                SelectItem::UnnamedExpr(expr) => {
+                    let my_name = get_select_expr_name(expr).unwrap_or(i.to_string());
+                    let t = get_res_col(my_name.as_str(), expr);
+                    vec![t.1]
+                }
+                SelectItem::ExprWithAlias { expr, alias } => {
+                    let t = get_res_col(alias.value.as_str(), expr);
+                    vec![t.1]
+                }
+                SelectItem::QualifiedWildcard(wc) => {
+                    let my_name: Arc<str> = Arc::from(object_name_to_string(wc).as_str());
+                    vec![
+                        //(
+                        //my_name.clone(),
+                        QlSelectItem::LazyExpr(LazyExpr::err(
+                            my_name.clone(),
+                            QueryError::not_supported("SelectItem::QualifiedWildcard"),
+                        )),
+                        //)
+                    ]
+                }
+                SelectItem::Wildcard => {
+                    // let vec = schema
+                    //     .columns()
+                    //     .iter()
+                    //     .map(|cd| {
+                    //         let col_name: Rc<str> = Rc::from(cd.col_name().as_str());
+                    //         (
+                    //             col_name.clone(),
+                    //             QlSelectItem::LazyExpr(LazyExpr::new(
+                    //                 col_name.clone(),
+                    //                 &Expr::Identifier(Ident::new(col_name.to_string())))),
+                    //         )
+                    //     })
+                    //     .collect::<Vec<_>>();
+                    // vec
+                    //let my_name = i.to_string();
+                    vec![
+                        //(
+                        //Rc::from(my_name.as_str()),
+                        QlSelectItem::RawMessage,
+                        //)
+                    ]
+                }
             }
         })
         .collect::<Vec<_>>()
