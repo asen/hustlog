@@ -7,9 +7,8 @@ use crate::query_processor::{
     eval_query, get_group_by_exprs, get_limit, get_offset, get_order_by_exprs, get_res_cols,
     LazyContext, QlRowBatch, QlSelectCols, SqlSelectQuery,
 };
-use crate::syslog_server::message_queue::{MessageSender, QueueMessage};
+use crate::syslog_server::message_queue::{MessageSender, QueueJoinHandle, QueueMessage};
 use crate::{DynError, GrokSchema, QlMemTable, QlSchema};
-use crate::syslog_server::output_processor::QueueJoinHandle;
 
 const TRUE_EXPRESSION: Expr = Expr::Value(Value::Boolean(true));
 
@@ -118,12 +117,13 @@ impl SqlBatchProcessor {
     }
 
     fn consume_queue_async(mut self) -> QueueJoinHandle {
-        tokio::spawn(async move {
+        let jh = tokio::spawn(async move {
             info!("Consuming SQL queue ...");
             self.consume_queue().await;
             info!("Done consuming SQL queue.");
             Ok(())
-        })
+        });
+        QueueJoinHandle::new("sql_batch", jh)
     }
 
     async fn consume_queue(&mut self) {

@@ -1,10 +1,9 @@
 use crate::query_processor::{QlRow, QlRowBatch};
-use crate::syslog_server::message_queue::{MessageQueue, MessageSender, QueueMessage};
+use crate::syslog_server::message_queue::{MessageQueue, MessageSender, QueueJoinHandle, QueueMessage};
 use crate::{ParsedMessage, QlSchema};
 use log::{error, info};
 use std::sync::Arc;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-use crate::syslog_server::output_processor::QueueJoinHandle;
 
 pub struct BatchingQueue {
     tx: UnboundedSender<QueueMessage<ParsedMessage>>,
@@ -98,12 +97,13 @@ impl BatchingQueue {
     }
 
     fn consume_batching_queue_async(mut self) -> QueueJoinHandle {
-        tokio::spawn(async move {
+        let jh = tokio::spawn(async move {
             info!("Consuming parsed messages queue ...");
             self.consume_queue().await;
             info!("Done consuming parsed messages queue.");
             Ok(())
-        })
+        });
+        QueueJoinHandle::new("batching", jh)
     }
 }
 

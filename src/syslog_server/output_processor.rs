@@ -2,13 +2,11 @@ use std::sync::Arc;
 use log::{error, info};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::sync::Mutex;
-use tokio::task::JoinHandle;
-use crate::{DynError, OutputSink};
+use crate::OutputSink;
 use crate::query_processor::QlRowBatch;
-use crate::syslog_server::message_queue::{MessageSender, QueueMessage};
+use crate::syslog_server::message_queue::{MessageSender, QueueJoinHandle, QueueMessage};
 
 pub type DynOutputSink = Arc<Mutex<dyn OutputSink + Send + Sync>>;
-pub type QueueJoinHandle = JoinHandle<Result<(),DynError>>;
 
 pub struct OutputProcessor {
     rx: UnboundedReceiver<QueueMessage<QlRowBatch>>,
@@ -41,12 +39,13 @@ impl OutputProcessor {
     }
 
     pub fn consume_queue_async(mut self) -> QueueJoinHandle {
-        tokio::spawn(async move {
+        let jh = tokio::spawn(async move {
             info!("Consuming output queue ...");
             self.consume_queue().await;
             info!("Done consuming output queue.");
             Ok(())
-        })
+        });
+        QueueJoinHandle::new("output", jh)
     }
 
     async fn consume_queue(&mut self) {
@@ -142,7 +141,7 @@ mod test {
         ).unwrap();
         sender.flush().unwrap();
         sender.shutdown().unwrap();
-        jh.await.unwrap().unwrap();
+        jh.join().await;
     }
 
 }

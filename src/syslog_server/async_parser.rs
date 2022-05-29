@@ -1,9 +1,8 @@
-use crate::syslog_server::message_queue::{MessageSender, QueueMessage};
+use crate::syslog_server::message_queue::{MessageSender, QueueJoinHandle, QueueMessage};
 use crate::{DynError, GrokParser, GrokSchema, LogParser, ParsedMessage, RawMessage};
 use log::{error, info};
 use std::sync::Arc;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-use crate::syslog_server::output_processor::QueueJoinHandle;
 
 pub struct AsyncParser {
     parsed_tx: MessageSender<ParsedMessage>,
@@ -35,12 +34,13 @@ impl AsyncParser {
     }
 
     fn consume_parser_queue_async(mut self) -> QueueJoinHandle {
-        tokio::spawn(async move {
+        let jh = tokio::spawn(async move {
             info!("Consuming Raw messages queue ...");
             self.consume_queue().await;
             info!("Done consuming Raw messages queue.");
             Ok(())
-        })
+        });
+        QueueJoinHandle::new("parser", jh)
     }
 
     async fn consume_queue(&mut self) {

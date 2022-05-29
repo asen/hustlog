@@ -1,6 +1,42 @@
 use std::error::Error;
 use std::fmt;
+use log::{debug, error};
 use tokio::sync::mpsc::UnboundedSender;
+use tokio::task::JoinHandle;
+use crate::DynError;
+
+pub struct QueueJoinHandle {
+    name: &'static str,
+    handle: JoinHandle<Result<(),DynError>>,
+}
+
+impl QueueJoinHandle {
+    pub fn new(
+        name: &'static str,
+        handle: JoinHandle<Result<(),DynError>>,
+    ) -> Self {
+        Self {
+            name,
+            handle,
+        }
+    }
+
+    pub async fn join(self) -> () {
+        let Self { name, handle } = self;
+        match handle.await {
+            Ok(join_ok) => {
+                if let Err(err) = join_ok {
+                    error!("QueueJoinHandle({}) consumeing queue returned error {:?}", name, err)
+                } else {
+                    debug!("QueueJoinHandle({}) completed with success", name)
+                }
+            }
+            Err(join_err) => {
+                error!("QueueJoinHandle({}) join returned error {:?}", name, join_err)
+            }
+        };
+    }
+}
 
 pub enum QueueMessage<T> {
     Data(T),

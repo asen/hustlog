@@ -1,16 +1,18 @@
 use crate::syslog_server::batching_queue::BatchingQueue;
-use crate::syslog_server::message_queue::MessageSender;
+use crate::syslog_server::message_queue::{MessageSender, QueueJoinHandle};
 use crate::syslog_server::async_parser::AsyncParser;
 use crate::syslog_server::sql_batch_processor::SqlBatchProcessor;
 use crate::syslog_server::tcp_server::{ConnectionError, TcpServerConnection};
 use crate::syslog_server::udp_server::UdpServerState;
 use crate::{AnsiSqlOutput, CsvOutput, DynError, HustlogConfig, OutputFormat, QlSchema, RawMessage};
-use log::{debug, error, info};
+use log::{debug, info};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use crate::syslog_server::output_processor::{DynOutputSink, OutputProcessor, QueueJoinHandle};
+use crate::syslog_server::output_processor::{DynOutputSink, OutputProcessor};
 
-// Create and wire the processing pipeline
+/// Create and wire the processing pipeline
+/// return a tuple consisting o fthe raw message sender and a vector of JoinHandles to be awaited
+/// or error.
 fn create_processing_pipeline(
     hcrc: &Arc<HustlogConfig>,
 ) -> Result<(MessageSender<Vec<RawMessage>>, Vec<QueueJoinHandle>), DynError> {
@@ -82,16 +84,7 @@ pub async fn server_main(hc: &HustlogConfig) -> Result<(), DynError> {
         }
     }
     for jh in join_handles {
-        match jh.await {
-            Ok(join_ok) => {
-                if let Err(err) = join_ok {
-                    error!("QueueJoinHandle returned error: {:?}", err);
-                }
-            }
-            Err(join_err) => {
-                error!("QueueJoinHandle await returned JoinError: {:?}", join_err);
-            }
-        }
+        jh.join().await;
     }
     info!("Server shut down");
     Ok(())
