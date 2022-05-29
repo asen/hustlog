@@ -92,6 +92,7 @@ macro_rules! args_or_external_bool_default {
 
 pub type DynError = Box<dyn Error + Send + Sync>;
 pub type DynBoxWrite = Box<dyn Write + Send + Sync>;
+pub type DynBufRead = Box<dyn BufRead + Send + Sync>;
 
 pub enum OutputFormat {
     DEFAULT,
@@ -257,8 +258,8 @@ impl HustlogConfig {
         ))
     }
 
-    pub fn get_buf_read(&self) -> Result<Box<dyn BufRead>, DynError> {
-        let reader: Box<dyn BufRead> = if &self.input == "-" {
+    pub fn get_buf_read(&self) -> Result<DynBufRead, DynError> {
+        let reader: DynBufRead = if &self.input == "-" {
             Box::new(BufReader::new(io::stdin()))
         } else {
             Box::new(BufReader::new(fs::File::open(&self.input)?))

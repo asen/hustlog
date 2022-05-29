@@ -57,7 +57,7 @@ fn create_processing_pipeline(
     join_handles.push(jh);
     let (raw_sender, jh) = AsyncParser::wrap_parsed_sender(parsed_sender, schema.clone())?;
     join_handles.push(jh);
-    join_handles.reverse();
+    join_handles.reverse(); //we want to shut these down in reverse order later
     Ok((raw_sender, join_handles))
 }
 

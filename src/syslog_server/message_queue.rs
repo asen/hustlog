@@ -48,7 +48,7 @@ pub enum QueueMessage<T> {
 pub struct QueueError(String);
 impl fmt::Display for QueueError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "ChannelError: {}", self.0)
+        write!(f, "QueueError: {}", self.0)
     }
 }
 impl Error for QueueError {}
