@@ -1,9 +1,10 @@
+use crate::query_processor::{QlRow, QlRowBatch};
 use crate::syslog_server::message_queue::{MessageQueue, MessageSender, QueueMessage};
 use crate::{ParsedMessage, QlSchema};
 use log::{error, info};
 use std::sync::Arc;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-use crate::query_processor::{QlRow, QlRowBatch};
+use crate::syslog_server::output_processor::QueueJoinHandle;
 
 pub struct BatchingQueue {
     tx: UnboundedSender<QueueMessage<ParsedMessage>>,
@@ -15,7 +16,11 @@ pub struct BatchingQueue {
 }
 
 impl BatchingQueue {
-    fn new(schema: Arc<QlSchema>, batch_size: usize, batch_sender: MessageSender<QlRowBatch>) -> Self {
+    fn new(
+        schema: Arc<QlSchema>,
+        batch_size: usize,
+        batch_sender: MessageSender<QlRowBatch>,
+    ) -> Self {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         let buf = Vec::with_capacity(batch_size);
         Self {
@@ -28,11 +33,15 @@ impl BatchingQueue {
         }
     }
 
-    pub fn wrap_output(schema: Arc<QlSchema>, batch_size: usize, batch_sender: MessageSender<QlRowBatch>) -> MessageSender<ParsedMessage>{
+    pub fn wrap_output(
+        schema: Arc<QlSchema>,
+        batch_size: usize,
+        batch_sender: MessageSender<QlRowBatch>,
+    ) -> (MessageSender<ParsedMessage>, QueueJoinHandle) {
         let batching_queue = BatchingQueue::new(schema, batch_size, batch_sender);
         let parsed_sender = batching_queue.clone_sender();
-        batching_queue.consume_batching_queue_async();
-        parsed_sender
+        let jh = batching_queue.consume_batching_queue_async();
+        (parsed_sender, jh)
     }
 
     fn batch_message(&mut self, pm: ParsedMessage) -> Option<Vec<ParsedMessage>> {
@@ -88,14 +97,14 @@ impl BatchingQueue {
         }
     }
 
-    fn consume_batching_queue_async(mut self) {
+    fn consume_batching_queue_async(mut self) -> QueueJoinHandle {
         tokio::spawn(async move {
             info!("Consuming parsed messages queue ...");
             self.consume_queue().await;
             info!("Done consuming parsed messages queue.");
-        });
+            Ok(())
+        })
     }
-
 }
 
 impl MessageQueue<ParsedMessage> for BatchingQueue {

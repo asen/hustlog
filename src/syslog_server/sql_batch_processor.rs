@@ -9,6 +9,7 @@ use crate::query_processor::{
 };
 use crate::syslog_server::message_queue::{MessageSender, QueueMessage};
 use crate::{DynError, GrokSchema, QlMemTable, QlSchema};
+use crate::syslog_server::output_processor::QueueJoinHandle;
 
 const TRUE_EXPRESSION: Expr = Expr::Value(Value::Boolean(true));
 
@@ -71,11 +72,11 @@ impl SqlBatchProcessor {
     pub fn wrap_sender(
         mut self,
         output_sender: MessageSender<QlRowBatch>,
-    ) -> Result<MessageSender<QlRowBatch>, DynError> {
+    ) -> Result<(MessageSender<QlRowBatch>, QueueJoinHandle), DynError> {
         self.output_sender = Some(output_sender);
         let ret = self.clone_sender();
-        self.consume_queue_async();
-        Ok(ret)
+        let jh = self.consume_queue_async();
+        Ok((ret,jh))
     }
 
     pub fn get_output_schema(&self) -> &Arc<QlSchema> {
@@ -116,12 +117,13 @@ impl SqlBatchProcessor {
         MessageSender::new(self.tx.clone())
     }
 
-    fn consume_queue_async(mut self) -> () {
+    fn consume_queue_async(mut self) -> QueueJoinHandle {
         tokio::spawn(async move {
             info!("Consuming SQL queue ...");
             self.consume_queue().await;
             info!("Done consuming SQL queue.");
-        });
+            Ok(())
+        })
     }
 
     async fn consume_queue(&mut self) {

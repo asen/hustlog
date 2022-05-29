@@ -3,6 +3,7 @@ use crate::{DynError, GrokParser, GrokSchema, LogParser, ParsedMessage, RawMessa
 use log::{error, info};
 use std::sync::Arc;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use crate::syslog_server::output_processor::QueueJoinHandle;
 
 pub struct AsyncParser {
     parsed_tx: MessageSender<ParsedMessage>,
@@ -15,12 +16,12 @@ impl AsyncParser {
     pub fn wrap_parsed_sender(
         parsed_sender: MessageSender<ParsedMessage>,
         schema: GrokSchema,
-    ) -> Result<MessageSender<Vec<RawMessage>>, DynError> {
+    ) -> Result<(MessageSender<Vec<RawMessage>>,QueueJoinHandle), DynError> {
         let grok_parser = GrokParser::new(schema)?;
         let async_parser = AsyncParser::new(parsed_sender, Arc::from(grok_parser));
         let raw_sender = async_parser.clone_sender();
-        async_parser.consume_parser_queue_async();
-        Ok(raw_sender)
+        let jh = async_parser.consume_parser_queue_async();
+        Ok((raw_sender, jh))
     }
 
     fn new(parsed_tx: MessageSender<ParsedMessage>, log_parser: Arc<GrokParser>) -> Self {
@@ -33,12 +34,13 @@ impl AsyncParser {
         }
     }
 
-    fn consume_parser_queue_async(mut self) {
+    fn consume_parser_queue_async(mut self) -> QueueJoinHandle {
         tokio::spawn(async move {
             info!("Consuming Raw messages queue ...");
             self.consume_queue().await;
             info!("Done consuming Raw messages queue.");
-        });
+            Ok(())
+        })
     }
 
     async fn consume_queue(&mut self) {
