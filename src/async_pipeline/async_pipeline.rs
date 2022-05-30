@@ -2,11 +2,14 @@ use std::sync::{Arc};
 use log::debug;
 use tokio::sync::Mutex;
 use crate::async_pipeline::message_queue::{MessageSender, QueueJoinHandle};
-use crate::{AnsiSqlOutput, CsvOutput, DynError, HustlogConfig, OutputFormat, QlSchema, RawMessage};
 use crate::async_pipeline::async_parser::AsyncParser;
 use crate::async_pipeline::batching_queue::BatchingQueue;
 use crate::async_pipeline::output_processor::{DynOutputSink, OutputProcessor};
 use crate::async_pipeline::sql_batch_processor::SqlBatchProcessor;
+use crate::{DynError, HustlogConfig, OutputFormat};
+use crate::output::{AnsiSqlOutput, CsvOutput};
+use crate::parser::RawMessage;
+use crate::ql_processor::QlSchema;
 
 /// Create and wire the processing pipeline
 /// return a tuple consisting of the raw message sender and a vector of JoinHandles
@@ -14,6 +17,7 @@ use crate::async_pipeline::sql_batch_processor::SqlBatchProcessor;
 pub fn create_processing_pipeline(
     hcrc: &Arc<HustlogConfig>,
 ) -> Result<(MessageSender<Vec<RawMessage>>, Vec<QueueJoinHandle>), DynError> {
+    hcrc.init_rayon_pool()?;
     let schema = hcrc.get_grok_schema();
     let ql_input_schema = Arc::new(QlSchema::from(&schema));
     let mut sql_processor: Option<SqlBatchProcessor> = None;

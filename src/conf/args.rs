@@ -1,9 +1,9 @@
 use std::fs;
-use std::io::{self, BufWriter, Write};
+use std::io::{self, BufWriter};
 
 use crate::conf::external::ExternalConfig;
 use clap::Parser;
-use crate::DynError;
+use crate::{DynBoxWrite, DynError};
 
 #[derive(Parser, Debug)]
 #[clap(name = "hustlog")]
@@ -94,6 +94,10 @@ pub struct MyArgs {
     /// Internal async queues channel size. Backpressure is applied when a channel gets full.
     /// Default is 1000
     pub channel_size: Option<usize>,
+
+    #[clap(long)]
+    pub async_file_processing: bool,
+
 }
 
 impl MyArgs {
@@ -106,8 +110,8 @@ impl MyArgs {
         }
     }
 
-    pub fn get_outp(&self) -> Result<Box<dyn Write>, DynError> {
-        let writer: Box<dyn Write> = match &self.output {
+    pub fn get_outp(&self) -> Result<DynBoxWrite, DynError> {
+        let writer: DynBoxWrite = match &self.output {
             None => Box::new(BufWriter::new(io::stdout())),
             Some(filename) => {
                 if filename == "-" {

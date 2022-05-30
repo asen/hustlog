@@ -3,7 +3,7 @@ use crate::ql_processor::ql_eval_expr::{
     eval_expr_type, object_name_to_string, LazyContext, LazyExpr,
 };
 use crate::ql_processor::SqlSelectQuery;
-use crate::{
+use crate::parser::{
     GrokColumnDef, GrokSchema, ParsedMessage, ParsedValue, ParsedValueType, ParserColDef,
     ParserSchema, RawMessage,
 };

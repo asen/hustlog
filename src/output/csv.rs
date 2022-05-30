@@ -1,7 +1,8 @@
 use crate::output::format::OutputSink;
-use crate::ql_processor::QlRow;
-use crate::{DynBoxWrite, DynError, ParserSchema, QlSchema};
+use crate::ql_processor::{QlRow, QlSchema};
 use std::sync::Arc;
+use crate::{DynBoxWrite, DynError};
+use crate::parser::ParserSchema;
 
 pub struct CsvOutput {
     schema: Arc<QlSchema>,

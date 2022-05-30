@@ -10,9 +10,9 @@ use std::io::Write;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use crate::LineMerger;
 use chrono::Datelike;
 use chrono::{DateTime, FixedOffset, Local, NaiveDateTime, Offset, TimeZone};
+use crate::parser::LineMerger;
 
 #[derive(Debug, Clone)]
 pub struct RawMessage(String);

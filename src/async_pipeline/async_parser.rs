@@ -1,5 +1,6 @@
 use crate::async_pipeline::message_queue::{ChannelReceiver, ChannelSender, MessageSender, QueueJoinHandle, QueueMessage};
-use crate::{DynError, GrokParser, GrokSchema, LogParser, ParsedMessage, RawMessage};
+use crate::DynError;
+use crate::parser::{GrokParser, GrokSchema, LogParser, ParsedMessage, RawMessage};
 use log::{error, info};
 use std::sync::Arc;
 

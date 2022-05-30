@@ -1,6 +1,6 @@
 use crate::syslog_server::lines_buffer::LinesBuffer;
 use crate::async_pipeline::message_queue::MessageSender;
-use crate::{DynError, HustlogConfig, RawMessage};
+use crate::{DynError, HustlogConfig};
 use log::{debug, error, info, log_enabled, trace, Level};
 use std::error::Error;
 use std::fmt;
@@ -10,6 +10,7 @@ use tokio::io::AsyncReadExt;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::signal;
 use tokio::time::interval;
+use crate::parser::RawMessage;
 
 #[derive(Debug)]
 pub struct ConnectionError {

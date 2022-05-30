@@ -1,5 +1,5 @@
-use crate::{LineMerger, RawMessage, SpaceLineMerger};
 use bytes::{Buf, BytesMut};
+use crate::parser::{LineMerger, RawMessage, SpaceLineMerger};
 
 pub struct LinesBuffer {
     buf: BytesMut,

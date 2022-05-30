@@ -13,7 +13,6 @@ pub async fn server_main(hc: &HustlogConfig) -> Result<(), DynError> {
     }?;
     let host_port = sc.get_host_port();
     let hcrc = Arc::new(hc.clone());
-    hcrc.init_rayon_pool()?;
     let (raw_sender, join_handles) = create_processing_pipeline(&hcrc)?;
     match sc.proto.as_str() {
         "tcp" => TcpServerConnection::tcp_server_main(raw_sender, hcrc, &host_port).await?,

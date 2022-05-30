@@ -2,12 +2,10 @@ use log::{error, info};
 use sqlparser::ast::{Expr, Value};
 use std::sync::Arc;
 
-use crate::ql_processor::{
-    eval_query, get_group_by_exprs, get_limit, get_offset, get_order_by_exprs, get_res_cols,
-    LazyContext, QlRowBatch, QlSelectCols, SqlSelectQuery,
-};
+use crate::ql_processor::{eval_query, get_group_by_exprs, get_limit, get_offset, get_order_by_exprs, get_res_cols, LazyContext, QlMemTable, QlRowBatch, QlSchema, QlSelectCols, SqlSelectQuery};
 use crate::async_pipeline::message_queue::{ChannelReceiver, ChannelSender, MessageSender, QueueJoinHandle, QueueMessage};
-use crate::{DynError, GrokSchema, QlMemTable, QlSchema};
+use crate::DynError;
+use crate::parser::GrokSchema;
 
 const TRUE_EXPRESSION: Expr = Expr::Value(Value::Boolean(true));
 

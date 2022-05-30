@@ -6,8 +6,9 @@ use std::collections::HashMap;
 use std::io::{BufRead, Write};
 use std::sync::Arc;
 
-use crate::{DynError, LineMerger, SpaceLineMerger};
 use grok::{patterns, Grok, Pattern};
+use crate::DynError;
+use crate::parser::{LineMerger, SpaceLineMerger};
 
 use crate::parser::parser::*;
 use crate::parser::schema::{ParserColDef, ParserSchema};

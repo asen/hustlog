@@ -1,11 +1,12 @@
 use crate::conf::external::ExternalConfig;
 use crate::syslog_server::SyslogServerConfig;
-use crate::{str2type, ConfigError, GrokColumnDef, GrokSchema, MyArgs};
 use std::error::Error;
 use std::fs;
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::sync::Arc;
 use tokio_rayon::rayon::ThreadPoolBuilder;
+use crate::{ConfigError, MyArgs};
+use crate::parser::{GrokColumnDef, GrokSchema, str2type};
 
 macro_rules! args_or_external_vec {
     ($a:expr,$b:expr, $prop:ident, $err: expr) => {
@@ -118,6 +119,8 @@ pub struct HustlogConfig {
     idle_timeout: u64,
 
     channel_size: usize,
+
+    async_file_processing: bool,
 }
 
 impl HustlogConfig {
@@ -166,6 +169,12 @@ impl HustlogConfig {
                 &external_conf,
                 channel_size,
                 &1000
+            ),
+            async_file_processing: args_or_external_bool_default!(
+                &args,
+                &external_conf,
+                output_add_ddl,
+                false
             ),
         })
     }
@@ -319,6 +328,10 @@ impl HustlogConfig {
         self.input.starts_with("syslog-tcp:") || self.input.starts_with("syslog-udp:")
     }
 
+    pub fn async_file_processing(&self) -> bool {
+        self.async_file_processing
+    }
+
     pub fn get_syslog_server_config(&self) -> Result<SyslogServerConfig, ConfigError> {
         if !self.input_is_syslog_server() {
             return Err(ConfigError::new("Invalid input param for syslog server"));
@@ -403,6 +416,7 @@ mod tests {
             tick_interval: None,
             idle_timeout: None,
             channel_size: None,
+            async_file_processing: false,
         }
     }
 

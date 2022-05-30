@@ -1,5 +1,5 @@
-use crate::ParsedValueType;
 use std::sync::Arc;
+use crate::parser::ParsedValueType;
 
 #[derive(Clone, Debug)]
 pub struct ParserColDef {

@@ -1,6 +1,6 @@
 use crate::syslog_server::lines_buffer::LinesBuffer;
 use crate::async_pipeline::message_queue::{ChannelReceiver, ChannelSender, MessageSender, QueueMessage};
-use crate::{DynError, HustlogConfig, RawMessage};
+use crate::{DynError, HustlogConfig};
 use bytes::BufMut;
 use log::{debug, error, info, Level, log_enabled, trace};
 use std::collections::HashMap;
@@ -9,6 +9,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::net::UdpSocket;
 use tokio::signal;
 use tokio::time::interval;
+use crate::parser::RawMessage;
 
 fn system_time_now() -> u64 {
     SystemTime::now()

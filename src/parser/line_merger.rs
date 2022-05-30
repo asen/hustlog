@@ -1,4 +1,4 @@
-use crate::RawMessage;
+use crate::parser::RawMessage;
 
 pub trait LineMerger {
     fn add_line(&mut self, line: String) -> Option<RawMessage>;

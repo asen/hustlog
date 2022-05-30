@@ -1,6 +1,7 @@
 use crate::ql_processor::QlRow;
-use crate::{DynBoxWrite, DynError, DynParserSchema, ParsedValue};
 use std::io::Write;
+use crate::{DynBoxWrite, DynError};
+use crate::parser::{DynParserSchema, ParsedValue};
 
 fn output_value_for_sql(pv: &ParsedValue, outp: &mut DynBoxWrite) -> Result<(), DynError> {
     match pv {
@@ -118,10 +119,12 @@ impl BatchedInserts {
 mod test {
     use crate::sqlgen::sql_create::SqlCreateSchema;
     use crate::sqlgen::BatchedInserts;
-    use crate::{test_syslog_schema, ParserIteratorInputTable, QlInputTable, QlSchema, DynParserSchema, DynBoxWrite, DynError};
     use std::io;
     use std::io::{BufRead, BufReader, BufWriter, Write};
     use std::sync::Arc;
+    use crate::{DynBoxWrite, DynError};
+    use crate::parser::{DynParserSchema, test_syslog_schema};
+    use crate::ql_processor::{ParserIteratorInputTable, QlInputTable, QlSchema};
 
     pub fn ql_table_to_sql(
         inp: &mut Box<dyn QlInputTable>,

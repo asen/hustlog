@@ -5,12 +5,13 @@ use crate::ql_processor::ql_schema::{
 };
 use crate::ql_processor::{QlRowBatch, QueryError};
 use crate::ql_processor::SqlSelectQuery;
-use crate::{DynError, GrokSchema, ParsedValue, ParserIterator, RawMessage};
 use sqlparser::ast::{Expr, Value};
 use std::cmp::{min, Ordering};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::Arc;
+use crate::DynError;
+use crate::parser::{GrokSchema, ParsedValue, ParserIterator, RawMessage};
 
 pub trait QlInputTable {
     fn read_row(&mut self) -> Result<Option<QlRow>, DynError>;
@@ -532,7 +533,8 @@ mod test {
     use std::sync::Arc;
 
     use crate::parser::test_syslog_schema;
-    use crate::{DynError, QlMemTable, QlSchema};
+    use crate::DynError;
+    use crate::ql_processor::{QlMemTable, QlSchema};
 
     use super::process_sql;
 

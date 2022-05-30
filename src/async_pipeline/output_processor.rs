@@ -2,10 +2,10 @@ use crate::ql_processor::QlRowBatch;
 use crate::async_pipeline::message_queue::{
     ChannelReceiver, ChannelSender, MessageSender, QueueJoinHandle, QueueMessage,
 };
-use crate::OutputSink;
 use log::{error, info};
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use crate::output::OutputSink;
 
 pub type DynOutputSink = Arc<Mutex<dyn OutputSink + Send + Sync>>;
 
@@ -94,9 +94,11 @@ impl OutputProcessor {
 mod test {
     use crate::ql_processor::QlRow;
     use crate::async_pipeline::output_processor::{DynOutputSink, OutputProcessor};
-    use crate::{DynError, OutputSink, ParsedValue};
+    use crate::DynError;
     use std::sync::Arc;
     use tokio::sync::Mutex;
+    use crate::output::OutputSink;
+    use crate::parser::ParsedValue;
 
     pub fn create_test_sink() -> DynOutputSink {
         Arc::new(Mutex::new(TestOutputSink::new()))

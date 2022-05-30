@@ -1,8 +1,8 @@
 use crate::output::format::OutputSink;
-use crate::ql_processor::QlRow;
-use crate::sqlgen::BatchedInserts;
-use crate::{DynBoxWrite, DynError, QlSchema, SqlCreateSchema};
+use crate::ql_processor::{QlRow, QlSchema};
+use crate::sqlgen::{BatchedInserts, SqlCreateSchema};
 use std::sync::Arc;
+use crate::{DynBoxWrite, DynError};
 
 pub struct AnsiSqlOutput {
     ddl: Option<SqlCreateSchema>,

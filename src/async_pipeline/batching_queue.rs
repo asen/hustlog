@@ -1,8 +1,8 @@
-use crate::ql_processor::{QlRow, QlRowBatch};
+use crate::ql_processor::{QlRow, QlRowBatch, QlSchema};
 use crate::async_pipeline::message_queue::{ChannelReceiver, ChannelSender, MessageQueue, MessageSender, QueueJoinHandle, QueueMessage};
-use crate::{ParsedMessage, QlSchema};
 use log::{error, info};
 use std::sync::Arc;
+use crate::parser::ParsedMessage;
 
 pub struct BatchingQueue {
     tx: ChannelSender<QueueMessage<ParsedMessage>>,
