@@ -57,8 +57,8 @@ impl LinesBuffer {
     }
 
     pub fn read_message_from_buf(&mut self) -> Option<RawMessage> {
-        let has_line_meger = self.line_merger.is_some();
-        if has_line_meger {
+        let has_line_merger = self.line_merger.is_some();
+        if has_line_merger {
             let mut ret: Option<RawMessage> = None;
             while let Some(line) = self.read_line_from_buf() {
                 let lm = self.line_merger.as_mut().unwrap();
