@@ -3,7 +3,9 @@ use crate::syslog_server::SyslogServerConfig;
 use std::error::Error;
 use std::fs;
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
+use std::pin::Pin;
 use std::sync::Arc;
+use tokio::io::AsyncRead;
 use tokio_rayon::rayon::ThreadPoolBuilder;
 use crate::{ConfigError, MyArgs};
 use crate::parser::{GrokColumnDef, GrokSchema, str2type};
@@ -94,6 +96,9 @@ macro_rules! args_or_external_bool_default {
 pub type DynError = Box<dyn Error + Send + Sync>;
 pub type DynBoxWrite = Box<dyn Write + Send + Sync>;
 pub type DynBufRead = Box<dyn BufRead + Send + Sync>;
+
+//pub type DynBoxAsyncWrite = Box<dyn AsyncWrite + Send + Sync>;
+pub type DynAsyncRead = Box<dyn AsyncRead + Send + Sync>;
 
 pub enum OutputFormat {
     DEFAULT,
@@ -187,7 +192,7 @@ impl HustlogConfig {
             &args,
             &external_conf,
             grok_schema_columns,
-            "At least one grok schema column is required"
+            "At least one grok schema column is required (-s), use with --help for more information"
         )?;
         let grok_schema_cols: Vec<_> = schema_columns
             .iter()
@@ -243,7 +248,7 @@ impl HustlogConfig {
             &args,
             &external_conf,
             grok_pattern,
-            "GROK pattern is required"
+            "GROK pattern (-g) is required, use with --help for more information"
         )?;
         let grok_schema_cols: Vec<GrokColumnDef> = Self::parse_col_defs(&args, &external_conf)?;
         let empty_vec = Vec::new();
@@ -288,11 +293,41 @@ impl HustlogConfig {
         let writer: DynBoxWrite = if &self.output == "-" {
             Box::new(BufWriter::new(io::stdout()))
         } else {
-            Box::new(BufWriter::new(fs::File::create(&self.output)?))
+            Box::new(BufWriter::new(
+                fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&self.output)?
+            ))
         };
         Ok(writer)
     }
 
+    pub async fn get_async_read(&self) -> Result<Pin<DynAsyncRead>, DynError> {
+        let reader: Pin<DynAsyncRead> = if &self.input == "-" {
+            Box::pin(tokio::io::stdin())
+        } else {
+            Box::pin(tokio::fs::File::open(&self.input).await?)
+        };
+        Ok(reader)
+    }
+
+
+    // pub async fn get_async_outp(&self) -> Result<DynBoxAsyncWrite, DynError> {
+    //     let writer: DynBoxAsyncWrite = if &self.output == "-" {
+    //         Box::new(BufWriter::new(tokio::io::stdout()))
+    //     } else {
+    //         Box::new(BufWriter::new(
+    //             tokio::fs::OpenOptions::new()
+    //                 .create(true)
+    //                 .append(true)
+    //                 .open(&self.output).await?
+    //         ))
+    //     };
+    //     Ok(writer)
+    // }
+
+    //TODO get rid of this
     pub fn get_logger(&self) -> Box<dyn Write> {
         Box::new(BufWriter::new(io::stderr()))
     }

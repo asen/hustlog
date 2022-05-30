@@ -29,11 +29,11 @@ Example usage:
     cargo build
     ./target/debug/hustlog --help # not everything is implemented
     ./target/debug/hustlog --grok-list-default-patterns # to see the built-in patterns
-    ./target/debug/hustlog -i /var/log/system.log -p SYSLOGLINE -s "+timestamp:ts:%b %e %H:%M:%S" -s +message -m
+    ./target/debug/hustlog -i /var/log/system.log -g SYSLOGLINE -s "+timestamp:ts:%b %e %H:%M:%S" -s +message -m
 
 Using SQL:
 
-    /target/debug/hustlog  -i /var/log/system.log -p SYSLOGLINE \
+    /target/debug/hustlog  -i /var/log/system.log -g SYSLOGLINE \
         -s "+timestamp:ts:%b %e %H:%M:%S" -s +message -m \
         -q 'select * from SYSLOGLINE where message="ASL Sender Statistics" limit 3 offset 1;'
     2022-04-27 00:25:39 +02:00,ASL Sender Statistics
@@ -42,7 +42,7 @@ Using SQL:
 
 DATE function can be used to specify time instants
 
-    ./target/debug/hustlog  -i /var/log/system.log -p SYSLOGLINE \
+    ./target/debug/hustlog  -i /var/log/system.log -g SYSLOGLINE \
     -s "+timestamp:ts:%b %e %H:%M:%S" -s +message -m \
     -q 'select * from SYSLOGLINE where message="ASL Sender Statistics" \
             and timestamp > DATE("%b %e %H:%M:%S", "Apr 27 12:00:00") \
@@ -51,7 +51,7 @@ DATE function can be used to specify time instants
 
 Output SQL Insert batches (e.g. to be piped to mysql client):
 
-    ./target/debug/hustlog  -i /var/log/system.log -p SYSLOGLINE \
+    ./target/debug/hustlog  -i /var/log/system.log -g SYSLOGLINE \
     -s "+timestamp:ts:%b %e %H:%M:%S" \
     -s logsource \
     -s program \
@@ -79,7 +79,7 @@ Output SQL Insert batches (e.g. to be piped to mysql client):
 
 Also supports SQL filter/transformation using -q, e.g.
 
-    ./target/debug/hustlog  -i /var/log/system.log -p SYSLOGLINE \
+    ./target/debug/hustlog  -i /var/log/system.log -g SYSLOGLINE \
     -s "+timestamp:ts:%b %e %H:%M:%S" \
     -s logsource \
     -s program \

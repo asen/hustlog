@@ -1,35 +1,36 @@
-use std::io::BufRead;
 use std::sync::Arc;
 use log::error;
+use tokio::io::AsyncReadExt;
 use crate::{DynError, HustlogConfig};
-use crate::async_pipeline::create_processing_pipeline;
+use crate::async_pipeline::{create_processing_pipeline, LinesBuffer};
 use crate::async_pipeline::message_queue::MessageSender;
-use crate::parser::{LineMerger, RawMessage, SpaceLineMerger};
+use crate::parser::RawMessage;
 
 async fn process_input(hcrc: Arc<HustlogConfig>, raw_sender: MessageSender<Vec<RawMessage>>) -> Result<(),DynError> {
-    let buf_read = hcrc.get_buf_read()?;
-    let mut line_merger = if hcrc.merge_multi_line() {
-        Some(SpaceLineMerger::new())
-    } else {
-        None
-    };
-    for line in buf_read.lines() {
-        let line = line?;
-        let raw_msg = if line_merger.is_some() {
-            line_merger.as_mut().unwrap().add_line(line)
-        } else {
-            Some(RawMessage::new(line))
-        };
-        if raw_msg.is_some() {
-            raw_sender.send(vec![raw_msg.unwrap()]).await?
+    let mut async_read = hcrc.get_async_read().await?;
+    let mut lines_buffer = LinesBuffer::new(hcrc.merge_multi_line());
+    loop {
+        let read_res = async_read.as_mut().read(lines_buffer.get_buf()).await;
+        match read_res {
+            Ok(rd) => {
+                if rd == 0 { // nothing left to read
+                    break
+                }
+                let msgs = lines_buffer.read_messages_from_buf();
+                if let Err(err) = raw_sender.send(msgs).await {
+                    error!("Error sending raw message downstream, aborting: {:?}", err);
+                    break;
+                }
+            }
+            Err(err) => {
+                error!("Error reading from input, aborting: {:?}", err);
+                break;
+            }
         }
     }
-    if line_merger.is_some() {
-        let raw_msg = line_merger.unwrap().flush();
-        if raw_msg.is_some() {
-            raw_sender.send(vec![raw_msg.unwrap()]).await?
-        }
-    }
+    let msgs = lines_buffer.flush();
+    raw_sender.send(msgs).await?;
+    raw_sender.shutdown().await?;
     Ok(())
 }
 
@@ -37,16 +38,13 @@ async fn process_input(hcrc: Arc<HustlogConfig>, raw_sender: MessageSender<Vec<R
 pub async fn file_process_main(hc: &HustlogConfig) -> Result<(), DynError> {
     let hcrc = Arc::new(hc.clone());
     let (raw_sender, join_handles) = create_processing_pipeline(&hcrc)?;
-    let cloned_sender = raw_sender.clone_sender();
-    let main_res = tokio_rayon::spawn_fifo(move || async {
-        process_input(hcrc, cloned_sender).await
-    }).await.await;//.join();
-    let mut err: Option<DynError> = None;
-    if let Err(e) = main_res {
-        error!("Error from the input thread: {:?}", e);
-        err = Some(e);
-    }
-    raw_sender.shutdown().await?;
+    let process_input_res = process_input(hcrc, raw_sender).await;
+    let err = if let Err(e) = process_input_res {
+        error!("Error from the input processing: {:?}", e);
+        Some(e)
+    } else {
+        None
+    };
     for jh in join_handles {
         jh.join().await;
     }

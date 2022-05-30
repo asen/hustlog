@@ -1,4 +1,4 @@
-use crate::syslog_server::lines_buffer::LinesBuffer;
+use crate::async_pipeline::lines_buffer::LinesBuffer;
 use crate::async_pipeline::message_queue::MessageSender;
 use crate::{DynError, HustlogConfig};
 use log::{debug, error, info, log_enabled, trace, Level};
