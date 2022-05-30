@@ -84,7 +84,7 @@ impl BatchingQueue {
                 QueueMessage::Data(pm) => {
                     if let Some(batch) = self.batch_message(pm) {
                         self.process_batch(batch).await;
-                        self.batch_processed = true;
+                        self.batch_processed = true; // this prevents Flush from actually flushing next time
                     }
                 }
                 QueueMessage::Flush => {

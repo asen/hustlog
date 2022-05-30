@@ -60,7 +60,7 @@ impl TcpServerConnection {
             raw_sender,
             socket,
             remote_addr: remote_addr,
-            buffer: LinesBuffer::new(16 * 1024, use_line_merger),
+            buffer: LinesBuffer::new(use_line_merger),
             is_closed: false,
             is_error: false,
         }

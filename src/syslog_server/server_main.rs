@@ -11,8 +11,8 @@ use tokio::sync::Mutex;
 use crate::syslog_server::output_processor::{DynOutputSink, OutputProcessor};
 
 /// Create and wire the processing pipeline
-/// return a tuple consisting o fthe raw message sender and a vector of JoinHandles to be awaited
-/// or error.
+/// return a tuple consisting of the raw message sender and a vector of JoinHandles
+/// to be awaited on shutdown, or return an error on failure
 fn create_processing_pipeline(
     hcrc: &Arc<HustlogConfig>,
 ) -> Result<(MessageSender<Vec<RawMessage>>, Vec<QueueJoinHandle>), DynError> {

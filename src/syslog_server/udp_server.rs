@@ -28,8 +28,7 @@ impl UdpStream {
         Self {
             last_data_rcvd: system_time_now(),
             remote_addr,
-            // TODO make lines buffer capacity configurable?
-            buffer: LinesBuffer::new(65536, use_line_merger),
+            buffer: LinesBuffer::new(use_line_merger),
         }
     }
 

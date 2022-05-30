@@ -7,14 +7,20 @@ pub struct LinesBuffer {
 }
 
 impl LinesBuffer {
-    pub fn new(capacity: usize, use_line_merger: bool) -> Self {
+    pub fn new(
+        //capacity: usize,
+        use_line_merger: bool
+    ) -> Self {
         let line_merger = if use_line_merger {
             Some(SpaceLineMerger::new())
         } else {
             None
         };
         Self {
-            buf: BytesMut::with_capacity(capacity),
+            buf: BytesMut::with_capacity(
+                //capacity,
+                64 * 1024, //TODO make configurable?
+            ),
             line_merger,
         }
     }
