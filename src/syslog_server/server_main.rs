@@ -13,7 +13,7 @@ pub async fn server_main(hc: &HustlogConfig) -> Result<(), DynError> {
     }?;
     let host_port = sc.get_host_port();
     let hcrc = Arc::new(hc.clone());
-    let (raw_sender, join_handles) = create_processing_pipeline(&hcrc)?;
+    let (raw_sender, join_handles) = create_processing_pipeline(&hcrc).await?;
     match sc.proto.as_str() {
         "tcp" => TcpServerConnection::tcp_server_main(raw_sender, hcrc, &host_port).await?,
         "udp" => UdpServerState::udp_server_main(raw_sender, hcrc, &host_port).await?,

@@ -37,7 +37,7 @@ async fn process_input(hcrc: Arc<HustlogConfig>, raw_sender: MessageSender<Vec<R
 
 pub async fn file_process_main(hc: &HustlogConfig) -> Result<(), DynError> {
     let hcrc = Arc::new(hc.clone());
-    let (raw_sender, join_handles) = create_processing_pipeline(&hcrc)?;
+    let (raw_sender, join_handles) = create_processing_pipeline(&hcrc).await?;
     let process_input_res = process_input(hcrc, raw_sender).await;
     let err = if let Err(e) = process_input_res {
         error!("Error from the input processing: {:?}", e);

@@ -14,7 +14,7 @@ use crate::ql_processor::QlSchema;
 /// Create and wire the processing pipeline
 /// return a tuple consisting of the raw message sender and a vector of JoinHandles
 /// to be awaited on shutdown, or return an error on failure
-pub fn create_processing_pipeline(
+pub async fn create_processing_pipeline(
     hcrc: &Arc<HustlogConfig>,
 ) -> Result<(MessageSender<Vec<RawMessage>>, Vec<QueueJoinHandle>), DynError> {
     hcrc.init_rayon_pool()?;
@@ -48,6 +48,9 @@ pub fn create_processing_pipeline(
             )))
         }
     };
+    if hcrc.output_add_ddl() {
+        sink.lock().await.output_header()?;
+    }
     let mut join_handles = Vec::new();
     let (mut output_sender, jh) = OutputProcessor::wrap_sink(
         sink,
