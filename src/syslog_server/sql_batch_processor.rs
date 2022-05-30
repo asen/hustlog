@@ -1,20 +1,19 @@
 use log::{error, info};
 use sqlparser::ast::{Expr, Value};
 use std::sync::Arc;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 use crate::query_processor::{
     eval_query, get_group_by_exprs, get_limit, get_offset, get_order_by_exprs, get_res_cols,
     LazyContext, QlRowBatch, QlSelectCols, SqlSelectQuery,
 };
-use crate::syslog_server::message_queue::{MessageSender, QueueJoinHandle, QueueMessage};
+use crate::syslog_server::message_queue::{ChannelReceiver, ChannelSender, MessageSender, QueueJoinHandle, QueueMessage};
 use crate::{DynError, GrokSchema, QlMemTable, QlSchema};
 
 const TRUE_EXPRESSION: Expr = Expr::Value(Value::Boolean(true));
 
 pub struct SqlBatchProcessor {
-    tx: UnboundedSender<QueueMessage<QlRowBatch>>,
-    rx: UnboundedReceiver<QueueMessage<QlRowBatch>>,
+    tx: ChannelSender<QueueMessage<QlRowBatch>>,
+    rx: ChannelReceiver<QueueMessage<QlRowBatch>>,
     //query: Arc<SqlSelectQuery>,
     select_cols: Arc<QlSelectCols>,
     where_c: Arc<Expr>,
@@ -32,8 +31,9 @@ impl SqlBatchProcessor {
         query: &str,
         schema: &GrokSchema,
         //output_sender: MessageSender<QlRowBatch>,
+        queue_size: usize,
     ) -> Result<Self, DynError> {
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, rx) = tokio::sync::mpsc::channel(queue_size);
         let query = Arc::new(SqlSelectQuery::new(query)?);
         let result_cols = get_res_cols(&schema, &query);
         let select_cols = Arc::new(QlSelectCols::new(result_cols));
@@ -87,15 +87,15 @@ impl SqlBatchProcessor {
         batch: QlRowBatch,
     ) -> Result<(), DynError> {
         let mut input_tabe = QlMemTable::from_rows_batch(self.input_schema.clone(), batch);
-        let mut output_table = QlMemTable::new(self.output_schema.clone());
         let select_cols = Arc::clone(&self.select_cols);
         let where_c = Arc::clone(&self.where_c);
         let limit = self.limit;
         let offset = self.offset;
         let group_by_exprs = Arc::clone(&self.group_by_exprs);
         let order_by_exprs = Arc::clone(&self.order_by_exprs);
-        let output_sender = self.output_sender.as_ref().unwrap().clone();
-        tokio_rayon::spawn_fifo(move || {
+        let cloned_schema = self.output_schema.clone();
+        let table_res: Result<QlMemTable, DynError> = tokio_rayon::spawn_fifo(move || {
+            let mut output_table = QlMemTable::new(cloned_schema);
             eval_query(
                 select_cols,
                 where_c,
@@ -106,10 +106,10 @@ impl SqlBatchProcessor {
                 &mut Box::new(&mut input_tabe),
                 &mut Box::new(&mut output_table),
             )?;
-            output_sender.send(output_table.consume_rows())?;
-            Ok(())
-        })
-        .await
+            Ok(output_table)
+        }).await;
+        self.output_sender.as_ref().unwrap().send(table_res?.consume_rows()).await?;
+        Ok(())
     }
 
     fn clone_sender(&self) -> MessageSender<QlRowBatch> {
@@ -136,14 +136,14 @@ impl SqlBatchProcessor {
                     }
                 }
                 QueueMessage::Flush => {
-                    if let Err(err) = self.output_sender.as_ref().unwrap().flush() {
+                    if let Err(err) = self.output_sender.as_ref().unwrap().flush().await {
                         error!("Failed to flush output sink, aborting: {:?}", err);
                         break;
                     }
                 }
                 QueueMessage::Shutdown => {
                     info!("Shutdown message received");
-                    if let Err(err) = self.output_sender.as_ref().unwrap().shutdown() {
+                    if let Err(err) = self.output_sender.as_ref().unwrap().shutdown().await {
                         error!("Failed to flush output sink, aborting: {:?}", err);
                         break;
                     }

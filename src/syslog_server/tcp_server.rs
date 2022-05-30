@@ -102,7 +102,7 @@ impl TcpServerConnection {
             if log_enabled!(Level::Trace) {
                 trace!("RECEIVED MESSAGES BATCH: ({}) first={:?}", batch.len(), batch.first())
             }
-            self.raw_sender.send(batch)?
+            self.raw_sender.send(batch).await?
         }
         Ok(())
     }
@@ -144,18 +144,18 @@ impl TcpServerConnection {
         let hcrc = Arc::clone(&hcrc);
         loop {
             // accept connections or process events, in a loop
-            let raw_sender = raw_sender.clone();
+            let raw_sender = raw_sender.clone_sender();
             tokio::select! {
                 _ = signal::ctrl_c() => {
                     info!("SIGTERM received, flushing buffers ...");
-                    raw_sender.shutdown()?; //this does flush internally
+                    raw_sender.shutdown().await?; //this does flush internally
                     break
                 }
                 _tick = intvl.tick() => {
                     if log_enabled!(Level::Trace) {
                         trace!("TICK");
                     }
-                    raw_sender.flush()?;
+                    raw_sender.flush().await?;
                 }
                 accept_res = listener.accept() => {
                     let (socket, remote_addr) = accept_res?;

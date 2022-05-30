@@ -90,6 +90,10 @@ pub struct MyArgs {
     /// Default is 30 seconds.
     #[clap(long)]
     pub idle_timeout: Option<u64>,
+
+    /// Internal async queues channel size. Backpressure is applied when a channel gets full.
+    /// Default is 1000
+    pub channel_size: Option<usize>,
 }
 
 impl MyArgs {

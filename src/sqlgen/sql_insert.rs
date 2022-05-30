@@ -114,20 +114,6 @@ impl BatchedInserts {
     }
 }
 
-// pub fn raw_to_sql(
-//     mut itable: Box<dyn QlInputTable>,
-//     outp: Box<dyn Write>,
-// ) -> Result<(), Box<dyn Error>> {
-//     let ql_schema = itable.ql_schema().clone();
-//     let bs: Box<&dyn ParserSchema> = Box::new(&ql_schema as &dyn ParserSchema);
-//     let mut sql_inserts = BatchedInserts::new(&bs, 100, outp);
-//     while let Some(pm) = itable.read_row()? {
-//         sql_inserts.add_to_batch(pm)?;
-//     }
-//     sql_inserts.flush()?;
-//     Ok(())
-// }
-
 #[cfg(test)]
 mod test {
     use crate::sqlgen::sql_create::SqlCreateSchema;

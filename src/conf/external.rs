@@ -27,6 +27,8 @@ pub struct ExternalConfig {
     pub tick_interval: Option<u64>,
 
     pub idle_timeout: Option<u64>,
+
+    pub channel_size: Option<usize>,
 }
 
 impl ExternalConfig {
@@ -57,6 +59,7 @@ impl ExternalConfig {
             rayon_threads: None,
             tick_interval: None,
             idle_timeout: None,
+            channel_size: None,
         }
     }
 }

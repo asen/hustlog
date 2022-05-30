@@ -116,6 +116,8 @@ pub struct HustlogConfig {
     tick_interval: u64,
 
     idle_timeout: u64,
+
+    channel_size: usize,
 }
 
 impl HustlogConfig {
@@ -146,7 +148,7 @@ impl HustlogConfig {
             output_format: output_format.to_string(),
             output_batch_size: *output_batch_size,
             output_add_ddl: output_add_ddl,
-            rayon_threads: *args_or_external_opt_default!(&args, &external_conf, rayon_threads, &2), // TODO
+            rayon_threads: *args_or_external_opt_default!(&args, &external_conf, rayon_threads, &2),
             tick_interval: *args_or_external_opt_default!(
                 &args,
                 &external_conf,
@@ -158,6 +160,12 @@ impl HustlogConfig {
                 &external_conf,
                 idle_timeout,
                 &30
+            ),
+            channel_size: *args_or_external_opt_default!(
+                &args,
+                &external_conf,
+                channel_size,
+                &1000
             ),
         })
     }
@@ -358,6 +366,10 @@ impl HustlogConfig {
     pub fn get_idle_timeout(&self) -> u64 {
         self.idle_timeout
     }
+
+    pub fn get_channel_size(&self) -> usize {
+        self.channel_size
+    }
 }
 
 #[cfg(test)]
@@ -390,6 +402,7 @@ mod tests {
             rayon_threads: None,
             tick_interval: None,
             idle_timeout: None,
+            channel_size: None,
         }
     }
 

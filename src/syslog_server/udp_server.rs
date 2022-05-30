@@ -1,5 +1,5 @@
 use crate::syslog_server::lines_buffer::LinesBuffer;
-use crate::syslog_server::message_queue::{MessageSender, QueueMessage};
+use crate::syslog_server::message_queue::{ChannelReceiver, ChannelSender, MessageSender, QueueMessage};
 use crate::{DynError, HustlogConfig, RawMessage};
 use bytes::BufMut;
 use log::{debug, error, info, Level, log_enabled, trace};
@@ -8,7 +8,6 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::net::UdpSocket;
 use tokio::signal;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::time::interval;
 
 fn system_time_now() -> u64 {
@@ -29,7 +28,8 @@ impl UdpStream {
         Self {
             last_data_rcvd: system_time_now(),
             remote_addr,
-            buffer: LinesBuffer::new(2048, use_line_merger), // TODO
+            // TODO make lines buffer capacity configurable?
+            buffer: LinesBuffer::new(65536, use_line_merger),
         }
     }
 
@@ -68,8 +68,8 @@ impl UdpData {
 
 pub struct UdpServerState {
     parser_tx: MessageSender<Vec<RawMessage>>,
-    tx: UnboundedSender<QueueMessage<UdpData>>,
-    rx: UnboundedReceiver<QueueMessage<UdpData>>,
+    tx: ChannelSender<QueueMessage<UdpData>>,
+    rx: ChannelReceiver<QueueMessage<UdpData>>,
     streams: HashMap<Arc<str>, UdpStream>,
     min_idle_ttl: u64,
     use_line_merger: bool,
@@ -80,8 +80,9 @@ impl UdpServerState {
         parser_tx: MessageSender<Vec<RawMessage>>,
         min_idle_ttl: u64,
         use_line_merger: bool,
+        queue_size: usize,
     ) -> Self {
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, rx) = tokio::sync::mpsc::channel(queue_size);
         Self {
             parser_tx,
             tx,
@@ -113,7 +114,7 @@ impl UdpServerState {
                 total_drained += drained;
             };
         }
-        if let Err(err) = self.parser_tx.flush() {
+        if let Err(err) = self.parser_tx.flush().await {
             error!("Failed to send flush message to parser: {}", err)
         }
         total_drained
@@ -123,7 +124,7 @@ impl UdpServerState {
         //let buf = stream.get_buffer();
         let msgs = buf.read_messages_from_buf();
         let ret = msgs.len();
-        if let Err(err) = self.parser_tx.send(msgs) {
+        if let Err(err) = self.parser_tx.send(msgs).await {
             error!("Error sending parsed message downstream: {:?}", err);
         }
         ret
@@ -146,7 +147,7 @@ impl UdpServerState {
                     let lines_buf = stream.get_buffer();
                     lines_buf.get_buf().put(data.as_slice());
                     let msgs = lines_buf.read_messages_from_buf();
-                    if let Err(err) = self.parser_tx.send(msgs) {
+                    if let Err(err) = self.parser_tx.send(msgs).await {
                         error!(
                             "Error sending parsed message downstream - aborting: {:?}",
                             err
@@ -164,7 +165,7 @@ impl UdpServerState {
                 QueueMessage::Shutdown => {
                     let flushed = self.flush(0).await; //everything is expired when shutting down
                     info!("Shutdown message received: flushed={}", flushed);
-                    if let Err(err) = self.parser_tx.shutdown() {
+                    if let Err(err) = self.parser_tx.shutdown().await {
                         error!("Faailed to send shutdown message to parser: {:?}", err)
                     };
                     break;
@@ -197,24 +198,29 @@ impl UdpServerState {
         );
         let mut buf = vec![0; 64 * 1024]; //max UDP packet is 64K
         let server_state =
-            UdpServerState::new(raw_sender, hcrc.get_idle_timeout(), hcrc.merge_multi_line());
+            UdpServerState::new(
+                raw_sender,
+                hcrc.get_idle_timeout(),
+                hcrc.merge_multi_line(),
+                hcrc.get_channel_size(),
+            );
         let udp_data_sender = server_state.clone_sender();
         server_state.consume_udp_data_queue_async();
 
         let mut intvl = interval(Duration::from_secs(hcrc.get_tick_interval()));
         loop {
-            let udp_data_sender = udp_data_sender.clone();
+            let udp_data_sender = udp_data_sender.clone_sender();
             tokio::select! {
                 _ = signal::ctrl_c() => {
                     info!("SIGTERM received, flushing buffers ...");
-                    udp_data_sender.shutdown()?; //this does flush internally
+                    udp_data_sender.shutdown().await?; //this does flush internally
                     break
                 }
                 _tick = intvl.tick() => {
                     if log_enabled!(Level::Trace) {
                         trace!("TICK");
                     }
-                    udp_data_sender.flush()?;
+                    udp_data_sender.flush().await?;
                 }
                 res = socket.recv_from(&mut buf) => {
                     match res {
@@ -225,7 +231,7 @@ impl UdpServerState {
                                 *x = 0
                             }
                             let rcvd_from = rcvd_from.to_string();
-                            udp_data_sender.send(UdpData::new(Arc::from(rcvd_from.as_str()), data))?;
+                            udp_data_sender.send(UdpData::new(Arc::from(rcvd_from.as_str()), data)).await?;
                         },
                         Err(err_res) => {
                             error!("socket.recv_from returned error: {:?}", err_res);

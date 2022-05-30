@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::fmt;
 use log::{debug, error};
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::task::JoinHandle;
 use crate::DynError;
 
@@ -53,35 +53,42 @@ impl fmt::Display for QueueError {
 }
 impl Error for QueueError {}
 
+
+pub type ChannelSender<T> = Sender<T>;
+pub type ChannelReceiver<T> = Receiver<T>;
+
 pub struct MessageSender<T> {
-    channel_sender: UnboundedSender<QueueMessage<T>>,
+    channel_sender: ChannelSender<QueueMessage<T>>,
 }
 
 //TODO maybe convert to a trait if unbounded_queue needs to be bounded/configurable
 impl<T> MessageSender<T> {
-    pub fn new(channel_sender: UnboundedSender<QueueMessage<T>>) -> Self {
+    pub fn new(channel_sender: ChannelSender<QueueMessage<T>>) -> Self {
         Self { channel_sender }
     }
 
-    pub fn send(&self, value: T) -> Result<(), QueueError> {
+    pub async fn send(&self, value: T) -> Result<(), QueueError> {
         self.channel_sender
             .send(QueueMessage::Data(value))
+            .await
             .map_err(|e| QueueError(e.to_string()))
     }
 
-    pub fn shutdown(&self) -> Result<(), QueueError> {
+    pub async fn shutdown(&self) -> Result<(), QueueError> {
         self.channel_sender
             .send(QueueMessage::Shutdown)
+            .await
             .map_err(|e| QueueError(e.to_string()))
     }
 
-    pub fn flush(&self) -> Result<(), QueueError> {
+    pub async fn flush(&self) -> Result<(), QueueError> {
         self.channel_sender
             .send(QueueMessage::Flush)
+            .await
             .map_err(|e| QueueError(e.to_string()))
     }
 
-    pub fn clone(&self) -> Self {
+    pub fn clone_sender(&self) -> Self {
         Self {
             channel_sender: self.channel_sender.clone(),
         }
