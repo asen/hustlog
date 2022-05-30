@@ -1,5 +1,5 @@
-use crate::query_processor::{QlRow, QlRowBatch};
-use crate::syslog_server::message_queue::{ChannelReceiver, ChannelSender, MessageQueue, MessageSender, QueueJoinHandle, QueueMessage};
+use crate::ql_processor::{QlRow, QlRowBatch};
+use crate::async_pipeline::message_queue::{ChannelReceiver, ChannelSender, MessageQueue, MessageSender, QueueJoinHandle, QueueMessage};
 use crate::{ParsedMessage, QlSchema};
 use log::{error, info};
 use std::sync::Arc;

@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::ops::{Add, Div, Mul, Rem, Sub};
 use std::sync::Arc;
 
-use crate::query_processor::ql_schema::QlRowContext;
-use crate::query_processor::QueryError;
+use crate::ql_processor::ql_schema::QlRowContext;
+use crate::ql_processor::QueryError;
 use crate::{str2val, ParsedValue, ParsedValueType, TimeTypeFormat};
 use sqlparser::ast::{
     BinaryOperator, Expr, Function, FunctionArg, FunctionArgExpr, ObjectName, UnaryOperator, Value,

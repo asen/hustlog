@@ -1,4 +1,4 @@
-use crate::query_processor::QlRow;
+use crate::ql_processor::QlRow;
 use crate::DynError;
 
 pub trait OutputSink {

@@ -1,10 +1,10 @@
-use crate::query_processor::ql_agg_expr::AggExpr;
-use crate::query_processor::ql_eval_expr::{eval_expr, eval_integer_expr, LazyContext};
-use crate::query_processor::ql_schema::{
+use crate::ql_processor::ql_agg_expr::AggExpr;
+use crate::ql_processor::ql_eval_expr::{eval_expr, eval_integer_expr, LazyContext};
+use crate::ql_processor::ql_schema::{
     get_res_cols, QlRow, QlRowContext, QlSchema, QlSelectCols, QlSelectItem,
 };
-use crate::query_processor::{QlRowBatch, QueryError};
-use crate::query_processor::SqlSelectQuery;
+use crate::ql_processor::{QlRowBatch, QueryError};
+use crate::ql_processor::SqlSelectQuery;
 use crate::{DynError, GrokSchema, ParsedValue, ParserIterator, RawMessage};
 use sqlparser::ast::{Expr, Value};
 use std::cmp::{min, Ordering};

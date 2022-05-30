@@ -1,5 +1,5 @@
 use crate::syslog_server::lines_buffer::LinesBuffer;
-use crate::syslog_server::message_queue::MessageSender;
+use crate::async_pipeline::message_queue::MessageSender;
 use crate::{DynError, HustlogConfig, RawMessage};
 use log::{debug, error, info, log_enabled, trace, Level};
 use std::error::Error;

@@ -1,5 +1,5 @@
 use crate::output::format::OutputSink;
-use crate::query_processor::QlRow;
+use crate::ql_processor::QlRow;
 use crate::{DynBoxWrite, DynError, ParserSchema, QlSchema};
 use std::sync::Arc;
 

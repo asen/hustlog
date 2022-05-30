@@ -1,8 +1,8 @@
-use crate::query_processor::ql_agg_expr::{get_agg_expr, AggExpr, DynAggExpr};
-use crate::query_processor::ql_eval_expr::{
+use crate::ql_processor::ql_agg_expr::{get_agg_expr, AggExpr, DynAggExpr};
+use crate::ql_processor::ql_eval_expr::{
     eval_expr_type, object_name_to_string, LazyContext, LazyExpr,
 };
-use crate::query_processor::SqlSelectQuery;
+use crate::ql_processor::SqlSelectQuery;
 use crate::{
     GrokColumnDef, GrokSchema, ParsedMessage, ParsedValue, ParsedValueType, ParserColDef,
     ParserSchema, RawMessage,

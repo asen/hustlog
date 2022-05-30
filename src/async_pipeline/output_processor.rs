@@ -1,5 +1,5 @@
-use crate::query_processor::QlRowBatch;
-use crate::syslog_server::message_queue::{
+use crate::ql_processor::QlRowBatch;
+use crate::async_pipeline::message_queue::{
     ChannelReceiver, ChannelSender, MessageSender, QueueJoinHandle, QueueMessage,
 };
 use crate::OutputSink;
@@ -92,8 +92,8 @@ impl OutputProcessor {
 
 #[cfg(test)]
 mod test {
-    use crate::query_processor::QlRow;
-    use crate::syslog_server::output_processor::{DynOutputSink, OutputProcessor};
+    use crate::ql_processor::QlRow;
+    use crate::async_pipeline::output_processor::{DynOutputSink, OutputProcessor};
     use crate::{DynError, OutputSink, ParsedValue};
     use std::sync::Arc;
     use tokio::sync::Mutex;

@@ -9,7 +9,7 @@ use conf::*;
 use output::*;
 use parser::*;
 
-use crate::query_processor::{
+use crate::ql_processor::{
     process_sql, ParserIteratorInputTable, QlInputTable, QlMemTable, QlSchema,
 };
 use crate::sqlgen::SqlCreateSchema;
@@ -18,9 +18,10 @@ use crate::syslog_server::server_main;
 mod conf;
 mod output;
 mod parser;
-mod query_processor;
+mod ql_processor;
 mod sqlgen;
 mod syslog_server;
+mod async_pipeline;
 
 
 fn main_print_default_patterns(mut outp: Box<dyn Write>) -> Result<(), DynError> {
