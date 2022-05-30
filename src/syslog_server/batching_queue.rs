@@ -11,6 +11,7 @@ pub struct BatchingQueue {
     schema: Arc<QlSchema>,
     batch_size: usize,
     batch_sender: MessageSender<QlRowBatch>,
+    batch_processed: bool, // keeping track whether a batch was processed between flushes
 }
 
 impl BatchingQueue {
@@ -29,6 +30,7 @@ impl BatchingQueue {
             schema,
             batch_size,
             batch_sender,
+            batch_processed: false,
         }
     }
 
@@ -81,14 +83,17 @@ impl BatchingQueue {
             match cmsg {
                 QueueMessage::Data(pm) => {
                     if let Some(batch) = self.batch_message(pm) {
-                        self.process_batch(batch).await
+                        self.process_batch(batch).await;
+                        self.batch_processed = true;
                     }
                 }
                 QueueMessage::Flush => {
-                    // TODO keep track of last batch processed and only flush
-                    // if no batches were processed since last flush
-                    let batch = self.flush();
-                    self.process_batch(batch).await;
+                    // only flush if no batches were processed since last flush
+                    if !self.batch_processed {
+                        let batch = self.flush();
+                        self.process_batch(batch).await;
+                    }
+                    self.batch_processed = false;
                 }
                 QueueMessage::Shutdown => {
                     info!("Shutdown message received");
