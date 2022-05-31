@@ -148,9 +148,9 @@ mod test {
         Apr 22 04:48:50 actek-mac login[49531]: USER_PROCESS: 49532 ttys000\n\
         ";
 
-    fn get_logger() -> Box<dyn Write> {
-        Box::new(BufWriter::new(std::io::stderr()))
-    }
+    // fn get_logger() -> Box<dyn Write> {
+    //     Box::new(BufWriter::new(std::io::stderr()))
+    // }
     fn get_stdout() -> DynBoxWrite {
         Box::new(BufWriter::new(io::stdout()))
     }
@@ -166,7 +166,7 @@ mod test {
         out.write("\n".as_bytes()).unwrap();
         let rdr: Box<dyn BufRead> = Box::new(BufReader::new(LINES1.as_bytes()));
         let pit = schema
-            .create_parser_iterator(rdr, false, get_logger())
+            .create_parser_iterator(rdr, false)
             .unwrap();
         let itbl = ParserIteratorInputTable::new(pit, ql_schema);
         let mut itbl_box = Box::new(itbl) as Box<dyn QlInputTable>;

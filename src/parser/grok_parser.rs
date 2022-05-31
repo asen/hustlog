@@ -3,7 +3,7 @@
 extern crate grok;
 
 use std::collections::HashMap;
-use std::io::{BufRead, Write};
+use std::io::BufRead;
 use std::sync::Arc;
 
 use grok::{patterns, Grok, Pattern};
@@ -93,7 +93,6 @@ impl GrokSchema {
         &self,
         rdr: Box<dyn BufRead>,
         use_line_merger: bool,
-        log: Box<dyn Write>,
     ) -> Result<ParserIterator, DynError> {
         let parser = GrokParser::new(self.clone())?;
         let line_merger: Option<Box<dyn LineMerger>> = if use_line_merger {
@@ -101,7 +100,7 @@ impl GrokSchema {
         } else {
             None
         };
-        let eror_processor = ParseErrorProcessor::new(log);
+        let eror_processor = ParseErrorProcessor::new();
         Ok(ParserIterator::new(
             Box::new(parser),
             line_merger,

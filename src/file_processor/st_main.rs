@@ -61,12 +61,11 @@ fn main_process_pit(
 
 pub fn st_main(conf: HustlogConfig) -> Result<(), DynError> {
     let outp: DynBoxWrite = conf.get_outp()?;
-    let log = conf.get_logger();
     let rdr = conf.get_buf_read()?;
     //println!("{:?}", args);
     let schema = conf.get_grok_schema();
     //println!("{:?}", schema);
-    let pit = schema.create_parser_iterator(rdr, conf.merge_multi_line(), log)?;
+    let pit = schema.create_parser_iterator(rdr, conf.merge_multi_line())?;
     main_process_pit(
         &schema,
         pit,

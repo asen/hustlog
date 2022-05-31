@@ -6,12 +6,12 @@ use std::error::Error;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::io;
-use std::io::Write;
 use std::rc::Rc;
 use std::sync::Arc;
 
 use chrono::Datelike;
 use chrono::{DateTime, FixedOffset, Local, NaiveDateTime, Offset, TimeZone};
+use log::error;
 use crate::parser::LineMerger;
 
 #[derive(Debug, Clone)]
@@ -377,17 +377,21 @@ pub trait LogParser {
 }
 
 pub struct ParseErrorProcessor {
-    stderr: Box<dyn Write>,
+    //stderr: Box<dyn Write>,
 }
 
 impl ParseErrorProcessor {
-    pub fn new(stderr: Box<dyn Write>) -> ParseErrorProcessor {
-        ParseErrorProcessor { stderr: stderr }
+    pub fn new(
+        //stderr: Box<dyn Write>
+    ) -> ParseErrorProcessor {
+        ParseErrorProcessor {
+            // stderr: stderr
+        }
     }
 
     pub fn process(&mut self, msg: RawMessage, err: &str) -> () {
         let s = ["PARSE ERROR: ", err, " RAW: ", msg.as_str(), "\n"].join("");
-        self.stderr.write(s.as_bytes()).unwrap();
+        error!("ParseErrorProcessor: {}", s);
     }
 }
 
@@ -479,8 +483,6 @@ impl Iterator for ParserIterator {
 
 #[cfg(test)]
 mod tests {
-    use std::io::BufWriter;
-
     use chrono::TimeZone;
 
     use crate::parser::*;
@@ -598,7 +600,7 @@ mod tests {
                 Box::new(parser),
                 None,
                 Box::new(lines.into_iter()),
-                ParseErrorProcessor::new(Box::new(BufWriter::new(io::stderr()))),
+                ParseErrorProcessor::new(),
             );
             println!("No line merger");
             while let Some(x) = pit.next() {
@@ -614,7 +616,7 @@ mod tests {
                 Box::new(parser),
                 Some(Box::new(SpaceLineMerger::new())),
                 Box::new(lines.into_iter()),
-                ParseErrorProcessor::new(Box::new(BufWriter::new(io::stderr()))),
+                ParseErrorProcessor::new(),
             );
             println!("With line merger");
             while let Some(x) = pit.next() {

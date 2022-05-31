@@ -529,7 +529,7 @@ pub fn process_sql(
 
 #[cfg(test)]
 mod test {
-    use std::io::{BufRead, BufReader, BufWriter, Write};
+    use std::io::{BufRead, BufReader};
     use std::sync::Arc;
 
     use crate::parser::test_syslog_schema;
@@ -538,9 +538,9 @@ mod test {
 
     use super::process_sql;
 
-    fn get_logger() -> Box<dyn Write> {
-        Box::new(BufWriter::new(std::io::stderr()))
-    }
+    // fn get_logger() -> Box<dyn Write> {
+    //     Box::new(BufWriter::new(std::io::stderr()))
+    // }
 
     // #[test]
     // fn test_eval_expr() {
@@ -583,9 +583,8 @@ mod test {
 
     fn test_query(query: &str, input: &'static str) -> Result<Box<QlMemTable>, DynError> {
         let schema = test_syslog_schema();
-        let log = get_logger();
         let rdr: Box<dyn BufRead> = Box::new(BufReader::new(input.as_bytes()));
-        let pit = schema.create_parser_iterator(rdr, false, log)?;
+        let pit = schema.create_parser_iterator(rdr, false)?;
         let mut rrt = QlMemTable::new(Arc::new(QlSchema::from(&schema)));
         let res = process_sql(&schema, pit, query, Box::new(&mut rrt));
         if res.is_ok() {

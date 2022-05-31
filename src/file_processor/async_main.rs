@@ -10,7 +10,7 @@ async fn process_input(hcrc: Arc<HustlogConfig>, raw_sender: MessageSender<Vec<R
     let mut async_read = hcrc.get_async_read().await?;
     let mut lines_buffer = LinesBuffer::new(hcrc.merge_multi_line());
     loop {
-        let read_res = async_read.as_mut().read(lines_buffer.get_buf()).await;
+        let read_res = async_read.as_mut().read_buf(lines_buffer.get_buf()).await;
         match read_res {
             Ok(rd) => {
                 if rd == 0 { // nothing left to read

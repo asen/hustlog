@@ -178,7 +178,7 @@ impl HustlogConfig {
             async_file_processing: args_or_external_bool_default!(
                 &args,
                 &external_conf,
-                output_add_ddl,
+                async_file_processing,
                 false
             ),
         })
@@ -326,11 +326,6 @@ impl HustlogConfig {
     //     };
     //     Ok(writer)
     // }
-
-    //TODO get rid of this
-    pub fn get_logger(&self) -> Box<dyn Write> {
-        Box::new(BufWriter::new(io::stderr()))
-    }
 
     pub fn get_grok_schema(&self) -> &GrokSchema {
         &self.grok_schema
