@@ -202,7 +202,7 @@ impl UdpServerState {
                 raw_sender,
                 hcrc.get_idle_timeout(),
                 hcrc.merge_multi_line(),
-                hcrc.get_channel_size(),
+                hcrc.get_async_channel_size(),
             );
         let udp_data_sender = server_state.clone_sender();
         server_state.consume_udp_data_queue_async();

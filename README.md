@@ -1,15 +1,18 @@
 # Hustlog
 
-Disclaimer: This is my first non-trivial Rust project and I am using it to learn the language.
-
-The goal of the project is to become a "swiss army knife" for logs, maybe even "ffmpeg for logs"
+This is my (work-in-progress) tool to mess with logs.
 
 What it has for now: 
 
 - log parser based on regular expressions and the [grok](https://crates.io/crates/grok) crate
-- (partially supported/WIP) SQL interface to access the parsed data
+- (partially supported/WIP) SQL interface to transform the parsed data
 (query parsing is using the [sqlparser](https://crates.io/crates/sqlparser) crate)
-
+- input from file/stdin for one-shot processing
+- tokio based TCP and UDP syslog servers to continuously accept and process logs
+- in-memory batching for more efficient downstream processing
+- apply SQL query transformations/filtering on the batches
+- output to file/stdout in CSV or SQL DDL (inserts) format
+- (TODO) live database output
 
 ## Use cases
 

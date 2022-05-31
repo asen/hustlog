@@ -94,9 +94,9 @@ pub struct MyArgs {
     /// Internal async queues channel size. Backpressure is applied when a channel gets full.
     /// Default is 1000
     #[clap(long)]
-    pub channel_size: Option<usize>,
+    pub async_channel_size: Option<usize>,
 
-    /// Potentially temporary option - to test sync (single-threaded) bs async file I/O performance
+    /// Potentially temporary option - to test sync (single-threaded) vs async file I/O performance
     /// set to true to use the async pipeline, may change the default too (currently default is false).
     #[clap(long)]
     pub async_file_processing: bool,

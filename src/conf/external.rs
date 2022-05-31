@@ -28,7 +28,7 @@ pub struct ExternalConfig {
 
     pub idle_timeout: Option<u64>,
 
-    pub channel_size: Option<usize>,
+    pub async_channel_size: Option<usize>,
 
     pub async_file_processing: Option<bool>,
 }
@@ -61,7 +61,7 @@ impl ExternalConfig {
             rayon_threads: None,
             tick_interval: None,
             idle_timeout: None,
-            channel_size: None,
+            async_channel_size: None,
             async_file_processing: None,
         }
     }

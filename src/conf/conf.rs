@@ -123,8 +123,7 @@ pub struct HustlogConfig {
 
     idle_timeout: u64,
 
-    channel_size: usize,
-
+    async_channel_size: usize,
     async_file_processing: bool,
 }
 
@@ -169,10 +168,10 @@ impl HustlogConfig {
                 idle_timeout,
                 &30
             ),
-            channel_size: *args_or_external_opt_default!(
+            async_channel_size: *args_or_external_opt_default!(
                 &args,
                 &external_conf,
-                channel_size,
+                async_channel_size,
                 &1000
             ),
             async_file_processing: args_or_external_bool_default!(
@@ -410,8 +409,8 @@ impl HustlogConfig {
         self.idle_timeout
     }
 
-    pub fn get_channel_size(&self) -> usize {
-        self.channel_size
+    pub fn get_async_channel_size(&self) -> usize {
+        self.async_channel_size
     }
 }
 
@@ -445,7 +444,7 @@ mod tests {
             rayon_threads: None,
             tick_interval: None,
             idle_timeout: None,
-            channel_size: None,
+            async_channel_size: None,
             async_file_processing: false,
         }
     }

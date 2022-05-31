@@ -9,9 +9,7 @@ grok_schema_cols:
   - program
   - "pid:int"
   - "+message"
-
 # grok_patterns_file: Option<String>
-grok_load_default: true
 grok_with_alias_only: false
 grok_ignore_default_patterns: false
 
@@ -21,3 +19,9 @@ output: "-"
 output_format: sql
 output_batch_size: 1000
 output_add_ddl: false
+
+rayon_threads: 2
+tick_interval: 30
+idle_timeout: 30
+async_channel_size: 2000
+async_file_processing: true

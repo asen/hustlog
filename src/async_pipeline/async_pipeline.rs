@@ -26,7 +26,7 @@ pub async fn create_processing_pipeline(
             SqlBatchProcessor::new(
                 hcrc.query().as_ref().unwrap().as_str(),
                 schema,
-                hcrc.get_channel_size(),
+                hcrc.get_async_channel_size(),
             )?
         );
         sql_processor.as_ref().unwrap().get_output_schema().clone()
@@ -54,7 +54,7 @@ pub async fn create_processing_pipeline(
     let mut join_handles = Vec::new();
     let (mut output_sender, jh) = OutputProcessor::wrap_sink(
         sink,
-        hcrc.get_channel_size(),
+        hcrc.get_async_channel_size(),
         hcrc.output_add_ddl(),
     );
     join_handles.push(jh);
@@ -66,13 +66,13 @@ pub async fn create_processing_pipeline(
     let (parsed_sender, jh) = BatchingQueue::wrap_output(
         ql_input_schema,
         hcrc.output_batch_size(),
-        hcrc.get_channel_size(),
+        hcrc.get_async_channel_size(),
         output_sender);
     join_handles.push(jh);
     let (raw_sender, jh) = AsyncParser::wrap_parsed_sender(
         parsed_sender,
         schema.clone(),
-        hcrc.get_channel_size(),
+        hcrc.get_async_channel_size(),
     )?;
     join_handles.push(jh);
     join_handles.reverse(); //we want to shut these down in reverse order later
