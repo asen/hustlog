@@ -155,3 +155,112 @@ impl LinesBuffer {
         ret
     }
 }
+
+#[cfg(test)]
+mod test {
+    use bytes::{BufMut, BytesMut};
+    use crate::async_pipeline::LinesBuffer;
+
+    const TEST_TEXT: &'static str = r#"<191>May 25 00:30:05 actek-mac syslogd[106]: Configuration Notice:
+	ASL Module "com.apple.authd" claims selected messages.
+	Those messages may not appear in standard system log files or in the ASL database.
+<191>May 25 00:30:05 actek-mac syslogd[106]: Configuration Notice:
+	ASL Module "com.apple.eventmonitor" claims selected messages.
+	Those messages may not appear in standard system log files or in the ASL database.
+<191>May 25 00:30:05 actek-mac syslogd[106]: Configuration Notice:
+	ASL Module "com.apple.mail" claims selected messages.
+	Those messages may not appear in standard system log files or in the ASL database.
+<191>May 25 00:30:05 actek-mac syslogd[106]: Configuration Notice:
+	ASL Module "com.apple.performance" claims selected messages.
+	Those messages may not appear in standard system log files or in the ASL database.
+<191>May 25 00:30:05 actek-mac syslogd[106]: Configuration Notice:
+	ASL Module "com.apple.iokit.power" claims selected messages.
+	Those messages may not appear in standard system log files or in the ASL database.
+<191>May 25 00:30:05 actek-mac syslogd[106]: Configuration Notice:
+	ASL Module "com.apple.contacts.ContactsAutocomplete" claims selected messages.
+	Those messages may not appear in standard system log files or in the ASL database.
+<191>May 25 00:30:05 actek-mac syslogd[106]: Configuration Notice:
+	ASL Module "com.apple.mkb" sharing output destination "/private/var/log/keybagd.log" with ASL Module "com.apple.mkb.internal".
+	Output parameters from ASL Module "com.apple.mkb.internal" override any specified in ASL Module "com.apple.mkb".
+<191>May 25 00:30:05 actek-mac syslogd[106]: Configuration Notice:
+	ASL Module "com.apple.mkb" claims selected messages.
+	Those messages may not appear in standard system log files or in the ASL database.
+<191>May 25 00:30:05 actek-mac syslogd[106]: Configuration Notice:
+	ASL Module "com.apple.MessageTracer" claims selected messages.
+	Those messages may not appear in standard system log files or in the ASL database.
+<191>May 25 00:34:32 actek-mac syslogd[106]: ASL Sender Statistics
+<191>May 25 00:46:43 actek-mac syslogd[106]: ASL Sender Statistics
+<191>May 25 01:01:44 actek-mac syslogd[106]: ASL Sender Statistics
+<191>May 25 01:20:27 actek-mac syslogd[106]: ASL Sender Statistics
+<191>May 25 01:36:32 actek-mac syslogd[106]: ASL Sender Statistics"#;
+
+    fn fill_buf(buf: &mut BytesMut, add_nl: bool) {
+        buf.put_slice(TEST_TEXT.as_bytes());
+        if add_nl {
+            buf.put("\n".as_bytes());
+        }
+    }
+
+
+    #[test]
+    fn test_line_buffer_with_lm1() {
+        let mut lb = LinesBuffer::new(true);
+        fill_buf(lb.get_buf(), false);
+        let mut lines = lb.read_messages_from_buf();
+        let mut flush_lines = lb.flush();
+        lines.append(&mut flush_lines);
+        assert_eq!(14, lines.len());
+        // println!("LINES_COUNT: {}", lines.len());
+        // for ln in lines {
+        //     println!("LINE: {}", ln.as_str())
+        // }
+    }
+
+    #[test]
+    fn test_line_buffer_with_lm2() {
+        let mut lb = LinesBuffer::new(true);
+        for _ in 0..64 {
+            fill_buf(lb.get_buf(), true);
+        }
+        let mut lines = lb.read_messages_from_buf();
+        let mut flush_lines = lb.flush();
+        lines.append(&mut flush_lines);
+        assert_eq!(14 * 64, lines.len());
+        // println!("LINES_COUNT: {}", lines.len());
+        // for ln in lines {
+        //     println!("LINE: {}", ln.as_str())
+        // }
+    }
+
+
+    #[test]
+    fn test_line_buffer_no_lm1() {
+        let mut lb = LinesBuffer::new(false);
+        fill_buf(lb.get_buf(), false);
+        let mut lines = lb.read_messages_from_buf();
+        let mut flush_lines = lb.flush();
+        lines.append(&mut flush_lines);
+        assert_eq!(32, lines.len());
+        // println!("LINES_COUNT: {}", lines.len());
+        // for ln in lines {
+        //     println!("LINE: {}", ln.as_str())
+        // }
+    }
+
+    #[test]
+    fn test_line_buffer_no_lm2() {
+        let mut lb = LinesBuffer::new(false);
+        for _ in 0..64 {
+            fill_buf(lb.get_buf(), true);
+        }
+        let mut lines = lb.read_messages_from_buf();
+        let mut flush_lines = lb.flush();
+        lines.append(&mut flush_lines);
+        assert_eq!(32 * 64, lines.len());
+        // println!("LINES_COUNT: {}", lines.len());
+        // for ln in lines {
+        //     println!("LINE: {}", ln.as_str())
+        // }
+    }
+
+}
