@@ -33,6 +33,9 @@ Example usage:
     ./target/debug/hustlog --help # not everything is implemented
     ./target/debug/hustlog --grok-list-default-patterns # to see the built-in patterns
     ./target/debug/hustlog -i /var/log/system.log -g SYSLOGLINE -s "+timestamp:ts:%b %e %H:%M:%S" -s +message -m
+    # to start a syslog server (tcp or udp)
+    ./target/debug/hustlog -i syslog-tcp:localhost:10514 -g SYSLOGLINE -s "+timestamp:ts:%b %e %H:%M:%S" -s +message -m
+    ./target/debug/hustlog -i syslog-udp:localhost:10514 -g SYSLOGLINE -s "+timestamp:ts:%b %e %H:%M:%S" -s +message -m
 
 Using SQL:
 

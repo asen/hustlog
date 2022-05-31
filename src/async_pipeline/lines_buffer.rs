@@ -1,5 +1,16 @@
 use bytes::{Buf, BytesMut};
 use crate::parser::{LineMerger, RawMessage, SpaceLineMerger};
+use bstr::ByteSlice;
+
+const LINE_ENDING_CHARS: [u8; 2] = ['\n' as u8, '\r' as u8];
+
+const DECIMAL_DIGIT_CHARS: [u8; 10] = [
+    '0' as u8, '1' as u8, '2' as u8, '3' as u8, '4' as u8,
+    '5' as u8, '6' as u8, '7' as u8, '8' as u8, '9' as u8,
+];
+
+const SYSLOG_PRI_OPEN_TAG: u8 = '<' as u8;
+const SYSLOG_PRI_CLOSE_TAG: u8 = '>' as u8;
 
 pub struct LinesBuffer {
     buf: BytesMut,
@@ -32,8 +43,7 @@ impl LinesBuffer {
             if f.is_none() {
                 break;
             }
-            let f = f.unwrap();
-            if *f == '\r' as u8 || *f == '\n' as u8 {
+            if LINE_ENDING_CHARS.contains(f.unwrap()) {
                 self.buf.advance(1)
             } else {
                 break;
@@ -41,11 +51,28 @@ impl LinesBuffer {
         }
     }
 
+    fn drop_syslog_priority(&mut self) {
+        let first_c = self.buf.first();
+        if let Some(&SYSLOG_PRI_OPEN_TAG) = first_c  {
+            let mut iter = self.buf.iter();
+            let mut to_advance = 1;
+            let _fc = iter.next().unwrap(); // skip the '<'
+            while let Some(c) = iter.next() {
+                if DECIMAL_DIGIT_CHARS.contains(c) {
+                    to_advance += 1;
+                } else if SYSLOG_PRI_CLOSE_TAG == *c {
+                    self.buf.advance(to_advance + 1);
+                    break;
+                } else {
+                    break; // not a digit, nor a close tag - not a priority prefix
+                }
+            }
+        }
+    }
+
     fn read_line_from_buf(&mut self) -> Option<String> {
-        let pos_of_nl = self
-            .buf
-            .iter()
-            .position(|x| *x == '\r' as u8 || *x == '\n' as u8);
+        self.drop_syslog_priority(); // TODO make this call optional?
+        let pos_of_nl = self.buf.find_byteset(LINE_ENDING_CHARS);
         if pos_of_nl.is_none() {
             None
         } else {
