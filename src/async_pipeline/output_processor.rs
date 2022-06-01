@@ -91,7 +91,7 @@ impl OutputProcessor {
 }
 
 #[cfg(test)]
-pub mod test {
+pub mod tests {
     use crate::ql_processor::QlRow;
     use crate::async_pipeline::output_processor::OutputProcessor;
     use crate::DynError;

@@ -528,7 +528,7 @@ pub fn process_sql(
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use std::io::{BufRead, BufReader};
     use std::sync::Arc;
 

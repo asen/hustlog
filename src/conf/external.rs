@@ -68,7 +68,7 @@ impl ExternalConfig {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use crate::conf::external::ExternalConfig;
     use std::path::PathBuf;
 

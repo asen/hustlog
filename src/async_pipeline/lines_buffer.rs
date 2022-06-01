@@ -157,7 +157,7 @@ impl LinesBuffer {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use bytes::{BufMut, BytesMut};
     use crate::async_pipeline::LinesBuffer;
 

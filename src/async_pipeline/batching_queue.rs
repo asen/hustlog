@@ -130,14 +130,14 @@ impl MessageQueue<ParsedMessage> for BatchingQueue {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use std::sync::Arc;
     use bytes::BufMut;
     use crate::async_pipeline::batching_queue::BatchingQueue;
     use crate::async_pipeline::LinesBuffer;
     use crate::async_pipeline::message_queue::tests::TestMessageQueue;
     use crate::async_pipeline::output_processor::OutputProcessor;
-    use crate::async_pipeline::output_processor::test::create_test_sink;
+    use crate::async_pipeline::output_processor::tests::create_test_sink;
     use crate::parser::{GrokParser, LogParser, test_dummy_data, test_dummy_schema};
     use crate::ql_processor::QlSchema;
 

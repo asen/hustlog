@@ -116,7 +116,7 @@ impl BatchedInserts {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use crate::sqlgen::sql_create::SqlCreateSchema;
     use crate::sqlgen::BatchedInserts;
     use std::io;

@@ -120,7 +120,7 @@ impl SqlCreateSchema {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use crate::sqlgen::sql_create::{SqlCreateCol, SqlCreateSchema};
     use std::sync::Arc;
 
