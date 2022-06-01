@@ -41,6 +41,13 @@ impl LogParseError {
         }
     }
 
+    pub fn from_string(desc: String, raw: RawMessage) -> LogParseError {
+        LogParseError {
+            desc: desc,
+            raw_msg: raw,
+        }
+    }
+
     pub fn get_raw(&self) -> &RawMessage {
         &self.raw_msg
     }

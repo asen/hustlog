@@ -174,7 +174,11 @@ impl LogParser for GrokParser {
                     }
                 }
                 if c.required && !found {
-                    return Err(LogParseError::new("required field not found - TODO", msg));
+                    return Err(LogParseError::from_string(
+                        format!("Required field not found: {} RAW: {}",
+                                c.pcd.name(),
+                                msg.as_str()),
+                        msg));
                 }
             }
             Ok(ParsedMessage::new(msg, ParsedData::new(hm)))
@@ -184,51 +188,89 @@ impl LogParser for GrokParser {
     }
 }
 
-#[cfg(test)]
-pub fn test_syslog_schema() -> GrokSchema {
-    GrokSchema {
-        pattern: String::from("SYSLOGLINE"),
-        load_default: true,
-        columns: vec![
-            GrokColumnDef::new(
-                Arc::from("timestamp"),
-                ParsedValueType::TimeType(TimeTypeFormat::new("%b %e %H:%M:%S")),
-                vec![Arc::new(String::from("timestamp"))],
-                true,
-            ),
-            GrokColumnDef::new(
-                Arc::from("message"),
-                ParsedValueType::StrType,
-                vec![Arc::new(String::from("message"))],
-                true,
-            ),
-            GrokColumnDef::new(
-                Arc::from("logsource"),
-                ParsedValueType::StrType,
-                vec![Arc::new(String::from("logsource"))],
-                true,
-            ),
-            GrokColumnDef::new(
-                Arc::from("program"),
-                ParsedValueType::StrType,
-                vec![Arc::new(String::from("program"))],
-                true,
-            ),
-            GrokColumnDef::new(
-                Arc::from("pid"),
-                ParsedValueType::LongType,
-                vec![Arc::new(String::from("pid"))],
-                true,
-            ),
-        ],
-        grok_with_alias_only: false,
-        extra_patterns: vec![],
-    }
-}
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
+
+    pub fn test_syslog_schema() -> GrokSchema {
+        GrokSchema {
+            pattern: String::from("SYSLOGLINE"),
+            load_default: true,
+            columns: vec![
+                GrokColumnDef::new(
+                    Arc::from("timestamp"),
+                    ParsedValueType::TimeType(TimeTypeFormat::new("%b %e %H:%M:%S")),
+                    vec![Arc::new(String::from("timestamp"))],
+                    true,
+                ),
+                GrokColumnDef::new(
+                    Arc::from("message"),
+                    ParsedValueType::StrType,
+                    vec![Arc::new(String::from("message"))],
+                    true,
+                ),
+                GrokColumnDef::new(
+                    Arc::from("logsource"),
+                    ParsedValueType::StrType,
+                    vec![Arc::new(String::from("logsource"))],
+                    true,
+                ),
+                GrokColumnDef::new(
+                    Arc::from("program"),
+                    ParsedValueType::StrType,
+                    vec![Arc::new(String::from("program"))],
+                    true,
+                ),
+                GrokColumnDef::new(
+                    Arc::from("pid"),
+                    ParsedValueType::LongType,
+                    vec![Arc::new(String::from("pid"))],
+                    true,
+                ),
+            ],
+            grok_with_alias_only: false,
+            extra_patterns: vec![],
+        }
+    }
+
+    pub fn test_dummy_schema() -> GrokSchema {
+        GrokSchema {
+            pattern: String::from("DUMMY"),
+            load_default: true,
+            columns: vec![
+                // GrokColumnDef::new(
+                //     Arc::from("timestamp"),
+                //     ParsedValueType::TimeType(TimeTypeFormat::new("%b %e %H:%M:%S")),
+                //     vec![Arc::new(String::from("timestamp"))],
+                //     true,
+                // ),
+                GrokColumnDef::new(
+                    Arc::from("num"),
+                    ParsedValueType::LongType,
+                    vec![Arc::new(String::from("num"))],
+                    true,
+                ),
+                GrokColumnDef::new(
+                    Arc::from("message"),
+                    ParsedValueType::StrType,
+                    vec![Arc::new(String::from("message"))],
+                    true,
+                ),
+            ],
+            grok_with_alias_only: false,
+            extra_patterns: vec![("DUMMY".to_string(),"%{NUMBER:num} +%{GREEDYDATA:message}".to_string())],
+        }
+    }
+
+    pub fn test_dummy_data(num_lines: usize) -> String {
+        (0..num_lines)
+            .map( |i| {
+                format!("{} line number {}\n", i, i)}
+            )
+            .collect::<Vec<_>>()
+            .join("")
+    }
 
     #[test]
     fn parse_works() {

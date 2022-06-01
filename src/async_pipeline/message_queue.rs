@@ -98,3 +98,56 @@ impl<T> MessageSender<T> {
 pub trait MessageQueue<T> {
     fn clone_sender(&self) -> MessageSender<T>;
 }
+
+#[cfg(test)]
+pub mod tests {
+    use log::info;
+    use tokio::task::JoinHandle;
+    use crate::async_pipeline::message_queue::{ChannelReceiver, MessageSender, QueueMessage};
+    use crate::DynError;
+
+    pub struct TestMessageQueue<T> {
+        rx: ChannelReceiver<QueueMessage<T>>,
+        pub received: usize,
+        pub flushed: usize,
+        pub shutdown: usize,
+    }
+
+    impl<T> TestMessageQueue<T>
+        where T: Send + Sync + 'static
+    {
+        pub fn create(channel_size: usize) -> (MessageSender<T>, JoinHandle<Result<TestMessageQueue<T>,DynError>>) {
+            let (tx, rx) = tokio::sync::mpsc::channel(channel_size);
+            let mq = Self { rx, received: 0, flushed: 0, shutdown: 0 };
+            let ret = MessageSender::new(tx);
+            let jh = mq.consume_queue_async();
+            (ret,jh)
+        }
+
+        pub fn consume_queue_async(mut self) -> JoinHandle<Result<TestMessageQueue<T>,DynError>> {
+            tokio::spawn(async move {
+                info!("Consuming test queue ...");
+                self.consume_queue().await;
+                info!("Done consuming test queue.");
+                Ok(self)
+            })
+        }
+
+        async fn consume_queue(&mut self) {
+            while let Some(cmsg) = self.rx.recv().await {
+                match cmsg {
+                    QueueMessage::Data(_) => {
+                        self.received += 1;
+                    }
+                    QueueMessage::Flush => {
+                        self.flushed += 1;
+                    }
+                    QueueMessage::Shutdown => {
+                        self.shutdown += 1;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}

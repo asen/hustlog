@@ -257,6 +257,26 @@ mod test {
         let mut flush_lines = lb.flush();
         lines.append(&mut flush_lines);
         assert_eq!(32 * 64, lines.len());
+        //println!("buf.capacity: {}", lb.get_buf().capacity());
+        // println!("LINES_COUNT: {}", lines.len());
+        // for ln in lines {
+        //     println!("LINE: {}", ln.as_str())
+        // }
+    }
+
+    #[test]
+    fn test_line_buffer_no_lm3() {
+        let mut lb = LinesBuffer::new(false);
+        let mut lines = lb.read_messages_from_buf();
+        for _ in 0..64 {
+            fill_buf(lb.get_buf(), true);
+            let mut ret_lines = lb.read_messages_from_buf();
+            lines.append(&mut ret_lines)
+        }
+        let mut flush_lines = lb.flush();
+        lines.append(&mut flush_lines);
+        assert_eq!(32 * 64, lines.len());
+        //println!("buf.capacity: {}", lb.get_buf().capacity());
         // println!("LINES_COUNT: {}", lines.len());
         // for ln in lines {
         //     println!("LINE: {}", ln.as_str())

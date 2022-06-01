@@ -91,16 +91,16 @@ impl OutputProcessor {
 }
 
 #[cfg(test)]
-mod test {
+pub mod test {
     use crate::ql_processor::QlRow;
-    use crate::async_pipeline::output_processor::{DynOutputSink, OutputProcessor};
+    use crate::async_pipeline::output_processor::OutputProcessor;
     use crate::DynError;
     use std::sync::Arc;
     use tokio::sync::Mutex;
     use crate::output::OutputSink;
     use crate::parser::ParsedValue;
 
-    pub fn create_test_sink() -> DynOutputSink {
+    pub fn create_test_sink() -> Arc<Mutex<TestOutputSink>> {
         Arc::new(Mutex::new(TestOutputSink::new()))
     }
 
@@ -123,51 +123,84 @@ mod test {
     impl OutputSink for TestOutputSink {
         fn output_header(&mut self) -> Result<(), DynError> {
             self.output_header_called += 1;
-            println!(
-                "TestOutputSink.output_header invoked ({})",
-                &self.output_header_called
-            );
+            // println!(
+            //     "TestOutputSink.output_header invoked ({})",
+            //     &self.output_header_called
+            // );
             Ok(())
         }
 
-        fn output_row(&mut self, row: QlRow) -> Result<(), DynError> {
+        fn output_row(&mut self, _row: QlRow) -> Result<(), DynError> {
             self.output_row_called += 1;
-            println!(
-                "TestOutputSink.output_row invoked: ROW ({}): {:?}",
-                &self.output_row_called, row
-            );
+            // println!(
+            //     "TestOutputSink.output_row invoked: ROW ({}): {:?}",
+            //     &self.output_row_called, row
+            // );
             Ok(())
         }
 
         fn flush(&mut self) -> Result<(), DynError> {
             self.flush_called += 1;
-            println!(
-                "TestOutputSink.flush_called invoked ({})",
-                &self.flush_called
-            );
+            // println!(
+            //     "TestOutputSink.flush_called invoked ({})",
+            //     &self.flush_called
+            // );
             Ok(())
         }
     }
 
+    pub fn test_ql_row() -> QlRow {
+        QlRow::new(
+            None,
+            vec![
+                (Arc::from("blah1"), ParsedValue::LongVal(42)),
+                (
+                    Arc::from("blah2"),
+                    ParsedValue::StrVal(Arc::new("blah 2 value".to_string())),
+                ),
+            ],
+        )
+    }
+
+    pub fn test_ql_rows(num: usize) -> Vec<QlRow> {
+        let mut ret = Vec::with_capacity(num);
+        for _ in 0..num {
+            ret.push(test_ql_row())
+        }
+        ret
+    }
+
     #[tokio::test]
-    async fn test_async_paser() {
-        let test_sink: DynOutputSink = create_test_sink();
+    async fn test_async_output_processor1() {
+        let test_sink = create_test_sink();
         let (sender, jh) = OutputProcessor::wrap_sink(test_sink.clone(), 10, false);
         sender
-            .send(vec![QlRow::new(
-                None,
-                vec![
-                    (Arc::from("blah1"), ParsedValue::LongVal(42)),
-                    (
-                        Arc::from("blah2"),
-                        ParsedValue::StrVal(Arc::new("blah 2 value".to_string())),
-                    ),
-                ],
-            )])
+            .send(test_ql_rows(1))
             .await
             .unwrap();
         sender.flush().await.unwrap();
         sender.shutdown().await.unwrap();
         jh.join().await;
+        let test_sink = test_sink.lock().await;
+        assert_eq!(test_sink.output_header_called, 0);
+        assert_eq!(test_sink.output_row_called, 1);
+        assert_eq!(test_sink.flush_called, 2); // shutdown flushes too
+    }
+
+    #[tokio::test]
+    async fn test_async_output_processor2() {
+        let test_sink = create_test_sink();
+        let (sender, jh) = OutputProcessor::wrap_sink(test_sink.clone(), 10, true);
+        sender.send(test_ql_rows(1)).await.unwrap();
+        sender.send(test_ql_rows(100)).await.unwrap();
+        sender.send(test_ql_rows(10)).await.unwrap();
+        //sender.flush().await.unwrap();
+        sender.shutdown().await.unwrap();
+        jh.join().await;
+        let test_sink = test_sink.lock().await;
+        assert_eq!(test_sink.output_header_called, 1);
+        assert_eq!(test_sink.output_row_called, 111);
+        assert_eq!(test_sink.flush_called, 1); // shutdown flushes too
     }
 }
+

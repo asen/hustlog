@@ -122,6 +122,7 @@ mod test {
     use std::io;
     use std::io::{BufRead, BufReader, BufWriter, Write};
     use std::sync::Arc;
+    use log::info;
     use crate::{DynBoxWrite, DynError};
     use crate::parser::{DynParserSchema, test_syslog_schema};
     use crate::ql_processor::{ParserIteratorInputTable, QlInputTable, QlSchema};
@@ -151,8 +152,38 @@ mod test {
     // fn get_logger() -> Box<dyn Write> {
     //     Box::new(BufWriter::new(std::io::stderr()))
     // }
-    fn get_stdout() -> DynBoxWrite {
-        Box::new(BufWriter::new(io::stdout()))
+
+    pub struct DummyWrite {
+        pub written: usize,
+        pub flushed: usize,
+    }
+
+    impl DummyWrite {
+        pub fn new() -> Self {
+            Self {
+                written: 0,
+                flushed: 0,
+            }
+        }
+    }
+
+    impl Write for DummyWrite {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            let len = buf.len();
+            self.written += len;
+            info!("DummyWrite: ({}): {}", len, String::from_utf8_lossy(buf));
+            Ok(len)
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            self.flushed += 1;
+            info!("DummyWrite: flushed: {} written: {}", self.flushed, self.written);
+            Ok(())
+        }
+    }
+
+    fn get_dummy_outp() -> DynBoxWrite {
+        Box::new(BufWriter::new(DummyWrite::new()))
     }
 
     #[test]
@@ -161,7 +192,7 @@ mod test {
         let ql_schema = Arc::new(QlSchema::from(&schema));
         let ddl = SqlCreateSchema::from_ql_schema(&ql_schema);
         let s = ddl.get_create_sql();
-        let mut out = get_stdout();
+        let mut out = get_dummy_outp();
         out.write(s.as_bytes()).unwrap();
         out.write("\n".as_bytes()).unwrap();
         let rdr: Box<dyn BufRead> = Box::new(BufReader::new(LINES1.as_bytes()));
