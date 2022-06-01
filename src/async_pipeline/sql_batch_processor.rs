@@ -151,3 +151,42 @@ impl SqlBatchProcessor {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use bytes::BufMut;
+    use crate::async_pipeline::LinesBuffer;
+    use crate::async_pipeline::message_queue::tests::{init_test_rayon_pool, TestMessageQueue};
+    use crate::async_pipeline::sql_batch_processor::SqlBatchProcessor;
+    use crate::parser::{GrokParser, LogParser, test_dummy_data, test_dummy_schema};
+    use crate::ql_processor::{QlRow, QlSchema};
+
+    #[tokio::test]
+    async fn test_sql_batch_processor1() {
+        init_test_rayon_pool();
+        let (test_queue_sender, test_queue_jh) = TestMessageQueue::create(2);
+        let schema = test_dummy_schema();
+        let ql_schema = Arc::new(QlSchema::from(&schema));
+        let bp = SqlBatchProcessor::new("select * from DUMMY", &schema, 2).unwrap();
+        let (sender, bjh) = bp.wrap_sender(test_queue_sender).unwrap();
+        let parser = GrokParser::new(schema).unwrap();
+        let mut lb = LinesBuffer::new(false);
+        lb.get_buf().put(test_dummy_data(100).as_bytes());
+        let mut ql_rows = Vec::new();
+        for raw in lb.flush() {
+            let parsed = parser.parse(raw).unwrap();
+            ql_rows.push(QlRow::from_parsed_message(parsed, ql_schema.as_ref()));
+        }
+        sender.send(ql_rows).await.unwrap();
+        sender.flush().await.unwrap();
+        sender.shutdown().await.unwrap();
+        bjh.join().await;
+        let test_queue_res = test_queue_jh.await.unwrap();
+        let test_queue = test_queue_res.unwrap();
+        assert_eq!(test_queue.received, 1);
+        assert_eq!(test_queue.flushed, 1);
+        assert_eq!(test_queue.shutdown, 1);
+    }
+
+}

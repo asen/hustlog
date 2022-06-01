@@ -103,8 +103,16 @@ pub trait MessageQueue<T> {
 pub mod tests {
     use log::info;
     use tokio::task::JoinHandle;
+    use tokio_rayon::rayon::ThreadPoolBuilder;
     use crate::async_pipeline::message_queue::{ChannelReceiver, MessageSender, QueueMessage};
     use crate::DynError;
+
+    pub fn init_test_rayon_pool() {
+        // ignoring errors ...
+        let _ = ThreadPoolBuilder::new()
+            .num_threads(2)
+            .build_global();
+    }
 
     pub struct TestMessageQueue<T> {
         rx: ChannelReceiver<QueueMessage<T>>,
