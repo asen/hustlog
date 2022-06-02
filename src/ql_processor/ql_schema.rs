@@ -135,6 +135,7 @@ impl QlRow {
                 (
                     qc.name().clone(),
                     parsed
+                        //TODO - is it possible to consume the values instead of cloning???
                         .get_value(qc.name().as_ref())
                         .map(|x| x.clone())
                         .unwrap_or(ParsedValue::NullVal),

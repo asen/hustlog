@@ -1,11 +1,11 @@
-use crate::ql_processor::QlRowBatch;
 use crate::async_pipeline::message_queue::{
     ChannelReceiver, ChannelSender, MessageSender, QueueJoinHandle, QueueMessage,
 };
+use crate::output::OutputSink;
+use crate::ql_processor::QlRowBatch;
 use log::{error, info};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use crate::output::OutputSink;
 
 pub type DynOutputSink = Arc<Mutex<dyn OutputSink + Send + Sync>>;
 
@@ -18,8 +18,8 @@ pub struct OutputProcessor {
 }
 
 impl OutputProcessor {
-    fn new(output_sink: DynOutputSink, queue_size: usize, add_ddl: bool) -> Self {
-        let (tx, rx) = tokio::sync::mpsc::channel(queue_size);
+    fn new(output_sink: DynOutputSink, channel_size: usize, add_ddl: bool) -> Self {
+        let (tx, rx) = tokio::sync::mpsc::channel(channel_size);
         Self {
             rx,
             tx,
@@ -31,10 +31,10 @@ impl OutputProcessor {
 
     pub fn wrap_sink(
         output_sink: DynOutputSink,
-        queue_size: usize,
+        channel_size: usize,
         add_ddl: bool,
     ) -> (MessageSender<QlRowBatch>, QueueJoinHandle) {
-        let op = Self::new(output_sink, queue_size, add_ddl);
+        let op = Self::new(output_sink, channel_size, add_ddl);
         let ret = op.clone_sender();
         let jh = op.consume_queue_async();
         (ret, jh)
@@ -92,13 +92,13 @@ impl OutputProcessor {
 
 #[cfg(test)]
 pub mod tests {
-    use crate::ql_processor::QlRow;
     use crate::async_pipeline::output_processor::OutputProcessor;
+    use crate::output::OutputSink;
+    use crate::parser::ParsedValue;
+    use crate::ql_processor::QlRow;
     use crate::DynError;
     use std::sync::Arc;
     use tokio::sync::Mutex;
-    use crate::output::OutputSink;
-    use crate::parser::ParsedValue;
 
     pub fn create_test_sink() -> Arc<Mutex<TestOutputSink>> {
         Arc::new(Mutex::new(TestOutputSink::new()))
@@ -174,10 +174,7 @@ pub mod tests {
     async fn test_async_output_processor1() {
         let test_sink = create_test_sink();
         let (sender, jh) = OutputProcessor::wrap_sink(test_sink.clone(), 10, false);
-        sender
-            .send(test_ql_rows(1))
-            .await
-            .unwrap();
+        sender.send(test_ql_rows(1)).await.unwrap();
         sender.flush().await.unwrap();
         sender.shutdown().await.unwrap();
         jh.join().await;
@@ -203,4 +200,3 @@ pub mod tests {
         assert_eq!(test_sink.flush_called, 1); // shutdown flushes too
     }
 }
-

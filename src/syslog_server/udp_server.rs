@@ -80,9 +80,9 @@ impl UdpServerState {
         parser_tx: MessageSender<Vec<RawMessage>>,
         min_idle_ttl: u64,
         use_line_merger: bool,
-        queue_size: usize,
+        channel_size: usize,
     ) -> Self {
-        let (tx, rx) = tokio::sync::mpsc::channel(queue_size);
+        let (tx, rx) = tokio::sync::mpsc::channel(channel_size);
         Self {
             parser_tx,
             tx,

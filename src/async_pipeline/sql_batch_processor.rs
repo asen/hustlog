@@ -2,10 +2,15 @@ use log::{error, info};
 use sqlparser::ast::{Expr, Value};
 use std::sync::Arc;
 
-use crate::ql_processor::{eval_query, get_group_by_exprs, get_limit, get_offset, get_order_by_exprs, get_res_cols, LazyContext, QlMemTable, QlRowBatch, QlSchema, QlSelectCols, SqlSelectQuery};
-use crate::async_pipeline::message_queue::{ChannelReceiver, ChannelSender, MessageSender, QueueJoinHandle, QueueMessage};
-use crate::DynError;
+use crate::async_pipeline::message_queue::{
+    ChannelReceiver, ChannelSender, MessageSender, QueueJoinHandle, QueueMessage,
+};
 use crate::parser::GrokSchema;
+use crate::ql_processor::{
+    eval_query, get_group_by_exprs, get_limit, get_offset, get_order_by_exprs, get_res_cols,
+    LazyContext, QlMemTable, QlRowBatch, QlSchema, QlSelectCols, SqlSelectQuery,
+};
+use crate::DynError;
 
 const TRUE_EXPRESSION: Expr = Expr::Value(Value::Boolean(true));
 
@@ -29,9 +34,9 @@ impl SqlBatchProcessor {
         query: &str,
         schema: &GrokSchema,
         //output_sender: MessageSender<QlRowBatch>,
-        queue_size: usize,
+        channel_size: usize,
     ) -> Result<Self, DynError> {
-        let (tx, rx) = tokio::sync::mpsc::channel(queue_size);
+        let (tx, rx) = tokio::sync::mpsc::channel(channel_size);
         let query = Arc::new(SqlSelectQuery::new(query)?);
         let result_cols = get_res_cols(&schema, &query);
         let select_cols = Arc::new(QlSelectCols::new(result_cols));
@@ -73,17 +78,14 @@ impl SqlBatchProcessor {
         self.output_sender = Some(output_sender);
         let ret = self.clone_sender();
         let jh = self.consume_queue_async();
-        Ok((ret,jh))
+        Ok((ret, jh))
     }
 
     pub fn get_output_schema(&self) -> &Arc<QlSchema> {
         &self.output_schema
     }
 
-    async fn execute_query_async(
-        &self,
-        batch: QlRowBatch,
-    ) -> Result<(), DynError> {
+    async fn execute_query_async(&self, batch: QlRowBatch) -> Result<(), DynError> {
         let mut input_tabe = QlMemTable::from_rows_batch(self.input_schema.clone(), batch);
         let select_cols = Arc::clone(&self.select_cols);
         let where_c = Arc::clone(&self.where_c);
@@ -105,8 +107,13 @@ impl SqlBatchProcessor {
                 &mut Box::new(&mut output_table),
             )?;
             Ok(output_table)
-        }).await;
-        self.output_sender.as_ref().unwrap().send(table_res?.consume_rows()).await?;
+        })
+        .await;
+        self.output_sender
+            .as_ref()
+            .unwrap()
+            .send(table_res?.consume_rows())
+            .await?;
         Ok(())
     }
 
@@ -115,6 +122,7 @@ impl SqlBatchProcessor {
     }
 
     fn consume_queue_async(mut self) -> QueueJoinHandle {
+        assert!(self.output_sender.is_some());
         let jh = tokio::spawn(async move {
             info!("Consuming SQL queue ...");
             self.consume_queue().await;
@@ -154,13 +162,13 @@ impl SqlBatchProcessor {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-    use bytes::BufMut;
-    use crate::async_pipeline::LinesBuffer;
     use crate::async_pipeline::message_queue::tests::{init_test_rayon_pool, TestMessageQueue};
     use crate::async_pipeline::sql_batch_processor::SqlBatchProcessor;
-    use crate::parser::{GrokParser, LogParser, test_dummy_data, test_dummy_schema};
+    use crate::async_pipeline::LinesBuffer;
+    use crate::parser::{test_dummy_data, test_dummy_schema, GrokParser, LogParser};
     use crate::ql_processor::{QlRow, QlSchema};
+    use bytes::BufMut;
+    use std::sync::Arc;
 
     #[tokio::test]
     async fn test_sql_batch_processor1() {
@@ -188,5 +196,4 @@ mod tests {
         assert_eq!(test_queue.flushed, 1);
         assert_eq!(test_queue.shutdown, 1);
     }
-
 }
