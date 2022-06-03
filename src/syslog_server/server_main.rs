@@ -6,13 +6,13 @@ use crate::{DynError, HustlogConfig};
 use crate::syslog_server::tcp_server::{ConnectionError, TcpServerConnection};
 use crate::syslog_server::udp_server::UdpServerState;
 
-pub async fn server_main(hc: &HustlogConfig) -> Result<(), DynError> {
+pub async fn server_main(hc: HustlogConfig) -> Result<(), DynError> {
     let sc = match hc.get_syslog_server_config() {
         Ok(x) => Ok(x),
         Err(ce) => Err(Box::new(ce)),
     }?;
     let host_port = sc.get_host_port();
-    let hcrc = Arc::new(hc.clone());
+    let hcrc = Arc::new(hc);
     let (raw_sender, join_handles) = create_processing_pipeline(&hcrc).await?;
     match sc.proto.as_str() {
         "tcp" => TcpServerConnection::tcp_server_main(raw_sender, hcrc, &host_port).await?,

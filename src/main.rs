@@ -20,7 +20,7 @@ fn tokio_server_main(hc: HustlogConfig) -> Result<(),DynError> {
     // let mut rt = tokio::runtime::Runtime::new().unwrap();
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
-        server_main(&hc).await
+        server_main(hc).await
     })
 }
 
@@ -28,7 +28,7 @@ fn tokio_file_process_main(hc: HustlogConfig) -> Result<(),DynError> {
     // let mut rt = tokio::runtime::Runtime::new().unwrap();
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
-        file_process_main(&hc).await
+        file_process_main(hc).await
     })
 }
 
