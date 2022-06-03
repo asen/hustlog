@@ -70,6 +70,12 @@ impl fmt::Display for LogParseError {
 
 impl Error for LogParseError {}
 
+// pub const ARC_NULL_PV: Arc<ParsedValue> = Arc::new(ParsedValue::NullVal);
+
+pub fn arc_null_pv() -> Arc<ParsedValue> {
+    Arc::new(ParsedValue::NullVal)
+}
+
 #[derive(Debug, Clone)]
 pub enum ParsedValue {
     NullVal,
@@ -302,8 +308,8 @@ fn parse_ts(s: &str, fmt: &TimeTypeFormat) -> Option<DateTime<FixedOffset>> {
     }
 }
 
-pub fn str2val(s: &str, ctype: &ParsedValueType) -> Option<ParsedValue> {
-    match ctype {
+pub fn str2val(s: &str, ctype: &ParsedValueType) -> Option<Arc<ParsedValue>> {
+    let pv_opt = match ctype {
         ParsedValueType::StrType => Some(ParsedValue::StrVal(Arc::new(String::from(s)))),
         ParsedValueType::LongType => s.parse::<i64>().ok().map(|v| ParsedValue::LongVal(v)),
         ParsedValueType::DoubleType => s.parse::<f64>().ok().map(|v| ParsedValue::DoubleVal(v)),
@@ -318,7 +324,8 @@ pub fn str2val(s: &str, ctype: &ParsedValueType) -> Option<ParsedValue> {
                 None
             }
         }
-    }
+    };
+    pv_opt.map(|pv| { Arc::new(pv) })
 }
 
 pub fn str2type(s: &str) -> Option<ParsedValueType> {
@@ -342,14 +349,14 @@ pub fn str2type(s: &str) -> Option<ParsedValueType> {
 }
 
 #[derive(Debug)]
-pub struct ParsedData(HashMap<Arc<str>, ParsedValue>);
+pub struct ParsedData(HashMap<Arc<str>, Arc<ParsedValue>>);
 
 impl ParsedData {
-    pub fn new(hm: HashMap<Arc<str>, ParsedValue>) -> ParsedData {
+    pub fn new(hm: HashMap<Arc<str>, Arc<ParsedValue>>) -> ParsedData {
         ParsedData(hm)
     }
 
-    pub fn get_value(&self, key: &str) -> Option<&ParsedValue> {
+    pub fn get_value(&self, key: &str) -> Option<&Arc<ParsedValue>> {
         self.0.get(key)
     }
 }
@@ -506,28 +513,28 @@ mod tests {
     #[test]
     fn str2val_works() {
         assert_eq!(
-            str2val("4", &ParsedValueType::LongType).unwrap(),
-            ParsedValue::LongVal(4i64)
+            str2val("4", &ParsedValueType::LongType).unwrap().as_ref(),
+            &ParsedValue::LongVal(4i64)
         );
         assert_eq!(
-            str2val("4", &ParsedValueType::DoubleType).unwrap(),
-            ParsedValue::DoubleVal(4.0f64)
+            str2val("4", &ParsedValueType::DoubleType).unwrap().as_ref(),
+            &ParsedValue::DoubleVal(4.0f64)
         );
         assert_eq!(
             str2val(
                 "2022-04-20 21:12:55.999+0200",
                 &ParsedValueType::TimeType(TimeTypeFormat::new("%Y-%m-%d %H:%M:%S.%3f%z"))
             )
-            .unwrap(),
-            ParsedValue::TimeVal(
+            .unwrap().as_ref(),
+            &ParsedValue::TimeVal(
                 FixedOffset::east(7200)
                     .ymd(2022, 4, 20)
                     .and_hms_micro(21, 12, 55, 999000)
             )
         );
         assert_eq!(
-            str2val("blah", &ParsedValueType::StrType).unwrap(),
-            ParsedValue::StrVal(Arc::new(String::from("blah")))
+            str2val("blah", &ParsedValueType::StrType).unwrap().as_ref(),
+            &ParsedValue::StrVal(Arc::new(String::from("blah")))
         );
     }
 
@@ -538,8 +545,8 @@ mod tests {
                 "Apr 22 02:34:54",
                 &ParsedValueType::TimeType(TimeTypeFormat::new("%b %e %H:%M:%S"))
             )
-            .unwrap(),
-            ParsedValue::TimeVal(
+            .unwrap().as_ref(),
+            &ParsedValue::TimeVal(
                 FixedOffset::east(local_timezone_offset())
                     .ymd(2022, 4, 22)
                     .and_hms(2, 34, 54)

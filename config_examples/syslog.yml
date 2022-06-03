@@ -3,7 +3,7 @@ input: /var/log/system.log
 merge_multi_line: true
 
 grok_pattern: SYSLOGLINE
-grok_schema_cols:
+grok_schema_columns:
   - "+timestamp:ts:%b %e %H:%M:%S"
   - logsource
   - program

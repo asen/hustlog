@@ -11,7 +11,7 @@ pub trait AggExpr {
     fn add_context(&mut self, ctx: &QlRowContext, dctx: &mut LazyContext)
         -> Result<(), QueryError>;
 
-    fn eval(&self) -> Result<ParsedValue, QueryError>;
+    fn eval(&self) -> Result<Arc<ParsedValue>, QueryError>;
 
     fn clone_expr(&self) -> DynAggExpr;
 
@@ -38,8 +38,8 @@ impl AggExpr for CountExpr {
         Ok(())
     }
 
-    fn eval(&self) -> Result<ParsedValue, QueryError> {
-        Ok(ParsedValue::LongVal(self.cnt))
+    fn eval(&self) -> Result<Arc<ParsedValue>, QueryError> {
+        Ok(Arc::new(ParsedValue::LongVal(self.cnt)))
     }
 
     fn clone_expr(&self) -> DynAggExpr {
@@ -64,7 +64,7 @@ impl AggExpr for CountExpr {
 struct CountDistinctExpr {
     name: Arc<str>,
     distinct_expr: Expr,
-    distinct_vs: HashSet<ParsedValue>,
+    distinct_vs: HashSet<Arc<ParsedValue>>,
 }
 
 impl AggExpr for CountDistinctExpr {
@@ -78,8 +78,8 @@ impl AggExpr for CountDistinctExpr {
         Ok(())
     }
 
-    fn eval(&self) -> Result<ParsedValue, QueryError> {
-        Ok(ParsedValue::LongVal(self.distinct_vs.len() as i64))
+    fn eval(&self) -> Result<Arc<ParsedValue>, QueryError> {
+        Ok(Arc::new(ParsedValue::LongVal(self.distinct_vs.len() as i64)))
     }
 
     fn clone_expr(&self) -> DynAggExpr {
@@ -105,7 +105,7 @@ impl AggExpr for CountDistinctExpr {
 struct MinExpr {
     name: Arc<str>,
     expr: Expr,
-    curv: Option<ParsedValue>,
+    curv: Option<Arc<ParsedValue>>,
 }
 
 impl AggExpr for MinExpr {
@@ -125,8 +125,8 @@ impl AggExpr for MinExpr {
         Ok(())
     }
 
-    fn eval(&self) -> Result<ParsedValue, QueryError> {
-        Ok(self.curv.as_ref().unwrap_or(&ParsedValue::NullVal).clone())
+    fn eval(&self) -> Result<Arc<ParsedValue>, QueryError> {
+        Ok(self.curv.as_ref().unwrap_or(&arc_null_pv()).clone())
     }
 
     fn clone_expr(&self) -> DynAggExpr {
@@ -152,7 +152,7 @@ impl AggExpr for MinExpr {
 struct MaxExpr {
     name: Arc<str>,
     expr: Expr,
-    curv: Option<ParsedValue>,
+    curv: Option<Arc<ParsedValue>>,
 }
 
 impl AggExpr for MaxExpr {
@@ -172,8 +172,8 @@ impl AggExpr for MaxExpr {
         Ok(())
     }
 
-    fn eval(&self) -> Result<ParsedValue, QueryError> {
-        Ok(self.curv.as_ref().unwrap_or(&ParsedValue::NullVal).clone())
+    fn eval(&self) -> Result<Arc<ParsedValue>, QueryError> {
+        Ok(self.curv.as_ref().unwrap_or(&arc_null_pv()).clone())
     }
 
     fn clone_expr(&self) -> DynAggExpr {
@@ -199,24 +199,24 @@ impl AggExpr for MaxExpr {
 struct SumExpr {
     name: Arc<str>,
     expr: Expr,
-    curv: Option<ParsedValue>,
+    curv: Option<Arc<ParsedValue>>,
 }
 
-fn add_parsed_values(v1: &ParsedValue, v2: &ParsedValue) -> Result<ParsedValue, QueryError> {
-    match v1 {
+fn add_parsed_values(v1: &Arc<ParsedValue>, v2: &Arc<ParsedValue>) -> Result<Arc<ParsedValue>, QueryError> {
+    match v1.as_ref() {
         ParsedValue::NullVal => Ok(v2.clone()),
-        ParsedValue::LongVal(x1) => match v2 {
+        ParsedValue::LongVal(x1) => match v2.as_ref() {
             ParsedValue::NullVal => Ok(v1.clone()),
-            ParsedValue::LongVal(x2) => Ok(ParsedValue::LongVal(*x1 + *x2)),
-            ParsedValue::DoubleVal(x2) => Ok(ParsedValue::DoubleVal(*x2 + *x1 as f64)),
+            ParsedValue::LongVal(x2) => Ok(Arc::new(ParsedValue::LongVal(*x1 + *x2))),
+            ParsedValue::DoubleVal(x2) => Ok(Arc::new(ParsedValue::DoubleVal(*x2 + *x1 as f64))),
             _ => Err(QueryError::new(
                 "Addition is only supported for numeric values",
             )),
         },
-        ParsedValue::DoubleVal(x1) => match v2 {
+        ParsedValue::DoubleVal(x1) => match v2.as_ref() {
             ParsedValue::NullVal => Ok(v1.clone()),
-            ParsedValue::LongVal(x2) => Ok(ParsedValue::DoubleVal(*x2 as f64 + *x1)),
-            ParsedValue::DoubleVal(x2) => Ok(ParsedValue::DoubleVal(*x2 + *x1)),
+            ParsedValue::LongVal(x2) => Ok(Arc::new(ParsedValue::DoubleVal(*x2 as f64 + *x1))),
+            ParsedValue::DoubleVal(x2) => Ok(Arc::new(ParsedValue::DoubleVal(*x2 + *x1))),
             _ => Err(QueryError::new(
                 "Addition is only supported for numeric values",
             )),
@@ -229,22 +229,21 @@ fn add_parsed_values(v1: &ParsedValue, v2: &ParsedValue) -> Result<ParsedValue, 
     }
 }
 
-const PV_ZERO_LONG: ParsedValue = ParsedValue::LongVal(0);
-
 impl AggExpr for SumExpr {
     fn add_context(
         &mut self,
         ctx: &QlRowContext,
         dctx: &mut LazyContext,
     ) -> Result<(), QueryError> {
+        let zero_long = Arc::new(ParsedValue::LongVal(0));
         let calc = eval_expr(&self.expr, ctx, dctx)?;
-        let &lval = &self.curv.as_ref().unwrap_or(&PV_ZERO_LONG);
+        let &lval = &self.curv.as_ref().unwrap_or(&zero_long);
         self.curv = Some(add_parsed_values(lval, &calc)?);
         Ok(())
     }
 
-    fn eval(&self) -> Result<ParsedValue, QueryError> {
-        Ok(self.curv.as_ref().unwrap_or(&ParsedValue::NullVal).clone())
+    fn eval(&self) -> Result<Arc<ParsedValue>, QueryError> {
+        Ok(self.curv.as_ref().unwrap_or(&arc_null_pv()).clone())
     }
 
     fn clone_expr(&self) -> DynAggExpr {
@@ -283,20 +282,19 @@ impl AggExpr for AvgExpr {
         Ok(())
     }
 
-    fn eval(&self) -> Result<ParsedValue, QueryError> {
+    fn eval(&self) -> Result<Arc<ParsedValue>, QueryError> {
         if self.cnt == 0 {
-            return Ok(ParsedValue::NullVal);
+            return Ok(arc_null_pv());
         }
         let sum_val = self.sum_expr.eval()?;
-        match sum_val {
-            ParsedValue::NullVal => Ok(ParsedValue::NullVal),
-            ParsedValue::LongVal(x) => Ok(ParsedValue::DoubleVal(x as f64 / self.cnt as f64)),
-            ParsedValue::DoubleVal(x) => Ok(ParsedValue::DoubleVal(x / self.cnt as f64)),
-            _ => Err(QueryError::new(
-                "Averaging is only supported for numeric values",
-            )), // ParsedValue::BoolVal(_) => {}
-                // ParsedValue::TimeVal(_) => {}
-                // ParsedValue::StrVal(_) => {}
+        match sum_val.as_ref() {
+            ParsedValue::NullVal => Ok(arc_null_pv()),
+            ParsedValue::LongVal(x) => Ok(Arc::new(ParsedValue::DoubleVal(*x as f64 / self.cnt as f64))),
+            ParsedValue::DoubleVal(x) => Ok(Arc::new(ParsedValue::DoubleVal(*x / self.cnt as f64))),
+            _ => Err(QueryError::new("Averaging is only supported for numeric values")),
+            // ParsedValue::BoolVal(_) => {}
+            // ParsedValue::TimeVal(_) => {}
+            // ParsedValue::StrVal(_) => {}
         }
     }
 

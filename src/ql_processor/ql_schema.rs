@@ -116,13 +116,13 @@ impl ParserSchema for QlSchema {
 #[derive(Debug, Clone)]
 pub struct QlRow {
     raw: Option<RawMessage>,
-    data: Vec<(Arc<str>, ParsedValue)>,
+    data: Vec<(Arc<str>, Arc<ParsedValue>)>,
 }
 
 pub type QlRowBatch = Vec<QlRow>;
 
 impl QlRow {
-    pub fn new(raw: Option<RawMessage>, data: Vec<(Arc<str>, ParsedValue)>) -> Self {
+    pub fn new(raw: Option<RawMessage>, data: Vec<(Arc<str>, Arc<ParsedValue>)>) -> Self {
         Self { raw, data }
     }
 
@@ -138,7 +138,7 @@ impl QlRow {
                         //TODO - is it possible to consume the values instead of cloning???
                         .get_value(qc.name().as_ref())
                         .map(|x| x.clone())
-                        .unwrap_or(ParsedValue::NullVal),
+                        .unwrap_or(Arc::new(ParsedValue::NullVal)),
                 )
             })
             .collect::<Vec<_>>();
@@ -152,7 +152,7 @@ impl QlRow {
         &self.raw
     }
 
-    pub fn data(&self) -> &Vec<(Arc<str>, ParsedValue)> {
+    pub fn data(&self) -> &Vec<(Arc<str>, Arc<ParsedValue>)> {
         &self.data
     }
 
@@ -166,14 +166,14 @@ impl QlRow {
 
 pub struct QlRowContext<'a> {
     row: Option<&'a QlRow>,
-    lookup_map: HashMap<Arc<str>, &'a ParsedValue>,
+    lookup_map: HashMap<Arc<str>, Arc<ParsedValue>>,
 }
 
 impl<'a> QlRowContext<'a> {
     pub fn from_row(row: &'a QlRow) -> QlRowContext {
-        let mut lookup_map: HashMap<Arc<str>, &ParsedValue> = HashMap::new();
+        let mut lookup_map: HashMap<Arc<str>, Arc<ParsedValue>> = HashMap::new();
         for (k, v) in &row.data {
-            lookup_map.insert(k.clone(), v);
+            lookup_map.insert(k.clone(), Arc::clone(v));
         }
         Self {
             row: Some(row),
@@ -192,8 +192,8 @@ impl<'a> QlRowContext<'a> {
         self.row.is_none()
     }
 
-    pub fn get_value(&self, key: &str) -> Option<ParsedValue> {
-        self.lookup_map.get(key).map(|&v| v.clone())
+    pub fn get_value(&self, key: &str) -> Option<Arc<ParsedValue>> {
+        self.lookup_map.get(key).map(|v| v.clone())
     }
 }
 

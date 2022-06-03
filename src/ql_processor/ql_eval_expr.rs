@@ -7,7 +7,7 @@ use crate::ql_processor::QueryError;
 use sqlparser::ast::{
     BinaryOperator, Expr, Function, FunctionArg, FunctionArgExpr, ObjectName, UnaryOperator, Value,
 };
-use crate::parser::{ParsedValue, ParsedValueType, str2val, TimeTypeFormat};
+use crate::parser::{arc_null_pv, ParsedValue, ParsedValueType, str2val, TimeTypeFormat};
 
 // pub struct StaticCtx<'a> {
 //     pd: Option<&'a ParsedData>,
@@ -36,7 +36,7 @@ use crate::parser::{ParsedValue, ParsedValueType, str2val, TimeTypeFormat};
 pub struct LazyExpr {
     name: Arc<str>,
     expr: Expr,
-    res: Option<Result<Option<ParsedValue>, QueryError>>,
+    res: Option<Result<Option<Arc<ParsedValue>>, QueryError>>,
 }
 
 impl LazyExpr {
@@ -90,7 +90,7 @@ impl LazyContext {
         &mut self,
         key: &str,
         ctx: &QlRowContext,
-    ) -> Result<Option<ParsedValue>, QueryError> {
+    ) -> Result<Option<Arc<ParsedValue>>, QueryError> {
         let lex_opt = self.hm.get(key);
         if lex_opt.is_none() {
             return Ok(None);
@@ -167,7 +167,7 @@ fn func_arg_to_pv(
     arg: &FunctionArg,
     ctx: &QlRowContext,
     dctx: &mut LazyContext,
-) -> Result<ParsedValue, QueryError> {
+) -> Result<Arc<ParsedValue>, QueryError> {
     match arg {
         FunctionArg::Named { .. } => Err(QueryError::not_supported(
             "Named function arguments are not supported yet",
@@ -177,7 +177,7 @@ fn func_arg_to_pv(
             FunctionArgExpr::QualifiedWildcard(_) => Err(QueryError::not_supported(
                 "FunctionArgExpr::QualifiedWildcard",
             )),
-            FunctionArgExpr::Wildcard => Ok(ParsedValue::StrVal(Arc::new("*".to_string()))),
+            FunctionArgExpr::Wildcard => Ok(Arc::new(ParsedValue::StrVal(Arc::new("*".to_string())))),
         },
     }
 }
@@ -220,7 +220,7 @@ fn eval_function_date(
     fun: &Function,
     ctx: &QlRowContext,
     dctx: &mut LazyContext,
-) -> Result<ParsedValue, QueryError> {
+) -> Result<Arc<ParsedValue>, QueryError> {
     let mut args_iter = fun.args.iter();
     // let cur_arg: &FunctionArg = args_iter
     //     .next()
@@ -238,8 +238,8 @@ fn eval_function_date(
         .next()
         .ok_or(QueryError::new("DATE function requires arguments"))?;
     let curv = func_arg_to_pv(cur_arg, ctx, dctx)?;
-    match curv {
-        ParsedValue::TimeVal(d) => Ok(ParsedValue::TimeVal(d)),
+    match curv.as_ref() {
+        ParsedValue::TimeVal(_) => Ok(Arc::clone(&curv)),
         ParsedValue::StrVal(s) => str2val(s.as_str(), &ParsedValueType::TimeType(tformat)).ok_or(
             QueryError::new(&format!("Failed to parse date from string {}", s.as_str())),
         ),
@@ -254,7 +254,7 @@ fn eval_function(
     fun: &Function,
     ctx: &QlRowContext,
     dctx: &mut LazyContext,
-) -> Result<ParsedValue, QueryError> {
+) -> Result<Arc<ParsedValue>, QueryError> {
     let fun_name = object_name_to_string(&fun.name);
     match fun_name.as_str() {
         "DATE" => eval_function_date(fun, ctx, dctx),
@@ -280,29 +280,29 @@ pub fn eval_expr(
     expr: &Expr,
     ctx: &QlRowContext,
     dctx: &mut LazyContext,
-) -> Result<ParsedValue, QueryError> {
+) -> Result<Arc<ParsedValue>, QueryError> {
     match expr {
         Expr::Identifier(x) => {
             if x.quote_style.is_some() || ctx.is_empty() {
-                Ok(ParsedValue::StrVal(Arc::new(x.value.clone())))
+                Ok(Arc::new(ParsedValue::StrVal(Arc::new(x.value.clone()))))
             } else {
                 if let Some(lazyv) = dctx.get_value(&x.value, ctx)? {
                     Ok(lazyv)
                 } else if let Some(val) = ctx.get_value(&x.value) {
                     Ok(val.clone())
                 } else {
-                    Ok(ParsedValue::NullVal)
+                    Ok(arc_null_pv())
                 }
             }
         }
         Expr::CompoundIdentifier(_) => Err(QueryError::not_impl("Expr::CompoundIdentifier")),
         Expr::IsNull(x) => {
             let res = eval_expr(x, ctx, dctx)?;
-            Ok(ParsedValue::BoolVal(res == ParsedValue::NullVal))
+            Ok(Arc::new(ParsedValue::BoolVal(res.as_ref() == &ParsedValue::NullVal)))
         }
         Expr::IsNotNull(x) => {
             let res = eval_expr(x, ctx, dctx)?;
-            Ok(ParsedValue::BoolVal(res != ParsedValue::NullVal))
+            Ok(Arc::new(ParsedValue::BoolVal(res.as_ref() != &ParsedValue::NullVal)))
         }
         Expr::IsDistinctFrom(_, _) => Err(QueryError::not_impl("Expr::IsDistinctFrom")),
         Expr::IsNotDistinctFrom(_, _) => Err(QueryError::not_impl("Expr::IsNotDistinctFrom")),
@@ -319,21 +319,21 @@ pub fn eval_expr(
             };
             // another closure for lazy eval
             let mut arithmetic_op = |op: &BinaryOperator| {
-                let rvalv: ParsedValue = rval()?;
-                match (&lval, &rvalv) {
+                let rvalv: Arc<ParsedValue> = rval()?;
+                match (lval.as_ref(), rvalv.as_ref()) {
                     (ParsedValue::LongVal(lv), ParsedValue::LongVal(rv)) => {
-                        Ok(ParsedValue::LongVal(eval_aritmethic_op(*lv, *rv, &op)?))
+                        Ok(Arc::new(ParsedValue::LongVal(eval_aritmethic_op(*lv, *rv, &op)?)))
                     }
                     (ParsedValue::DoubleVal(lv), ParsedValue::LongVal(rv)) => {
                         let rvd = *rv as f64;
-                        Ok(ParsedValue::DoubleVal(eval_aritmethic_op(*lv, rvd, &op)?))
+                        Ok(Arc::new(ParsedValue::DoubleVal(eval_aritmethic_op(*lv, rvd, &op)?)))
                     }
                     (ParsedValue::LongVal(lv), ParsedValue::DoubleVal(rv)) => {
                         let lvd = *lv as f64;
-                        Ok(ParsedValue::DoubleVal(eval_aritmethic_op(lvd, *rv, &op)?))
+                        Ok(Arc::new(ParsedValue::DoubleVal(eval_aritmethic_op(lvd, *rv, &op)?)))
                     }
                     (ParsedValue::DoubleVal(lv), ParsedValue::DoubleVal(rv)) => {
-                        Ok(ParsedValue::DoubleVal(eval_aritmethic_op(*lv, *rv, &op)?))
+                        Ok(Arc::new(ParsedValue::DoubleVal(eval_aritmethic_op(*lv, *rv, &op)?)))
                     }
                     _ => Err(QueryError::incompatible_types(&lval, &rvalv, &op)),
                 }
@@ -347,26 +347,26 @@ pub fn eval_expr(
                 BinaryOperator::StringConcat => {
                     let lstr = lval.to_rc_str();
                     let rstr = rval()?.to_rc_str();
-                    Ok(ParsedValue::StrVal(Arc::new(
+                    Ok(Arc::new(ParsedValue::StrVal(Arc::new(
                         [lstr.as_ref(), rstr.as_ref()].join(""),
-                    )))
+                    ))))
                 }
-                BinaryOperator::Gt => Ok(ParsedValue::BoolVal(lval > rval()?)),
-                BinaryOperator::Lt => Ok(ParsedValue::BoolVal(lval < rval()?)),
-                BinaryOperator::GtEq => Ok(ParsedValue::BoolVal(lval >= rval()?)),
-                BinaryOperator::LtEq => Ok(ParsedValue::BoolVal(lval > rval()?)),
+                BinaryOperator::Gt => Ok(Arc::new(ParsedValue::BoolVal(lval > rval()?))),
+                BinaryOperator::Lt => Ok(Arc::new(ParsedValue::BoolVal(lval < rval()?))),
+                BinaryOperator::GtEq => Ok(Arc::new(ParsedValue::BoolVal(lval >= rval()?))),
+                BinaryOperator::LtEq => Ok(Arc::new(ParsedValue::BoolVal(lval > rval()?))),
                 BinaryOperator::Spaceship => Err(QueryError::not_impl("BinaryOperator::Spaceship")),
-                BinaryOperator::Eq => Ok(ParsedValue::BoolVal(lval == rval()?)),
-                BinaryOperator::NotEq => Ok(ParsedValue::BoolVal(lval != rval()?)),
-                BinaryOperator::And => Ok(ParsedValue::BoolVal(
+                BinaryOperator::Eq => Ok(Arc::new(ParsedValue::BoolVal(lval == rval()?))),
+                BinaryOperator::NotEq => Ok(Arc::new(ParsedValue::BoolVal(lval != rval()?))),
+                BinaryOperator::And => Ok(Arc::new(ParsedValue::BoolVal(
                     lval.as_bool().unwrap_or(false) && rval()?.as_bool().unwrap_or(false),
-                )),
-                BinaryOperator::Or => Ok(ParsedValue::BoolVal(
+                ))),
+                BinaryOperator::Or => Ok(Arc::new(ParsedValue::BoolVal(
                     lval.as_bool().unwrap_or(false) || rval()?.as_bool().unwrap_or(false),
-                )),
-                BinaryOperator::Xor => Ok(ParsedValue::BoolVal(
+                ))),
+                BinaryOperator::Xor => Ok(Arc::new(ParsedValue::BoolVal(
                     lval.as_bool().unwrap_or(false) != rval()?.as_bool().unwrap_or(false),
-                )),
+                ))),
                 BinaryOperator::Like => Err(QueryError::not_impl("BinaryOperator::Like")),
                 BinaryOperator::NotLike => Err(QueryError::not_impl("BinaryOperator::NotLike")),
                 BinaryOperator::ILike => Err(QueryError::not_impl("BinaryOperator::ILike")),
@@ -408,7 +408,7 @@ pub fn eval_expr(
             match op {
                 UnaryOperator::Plus => Err(QueryError::not_impl("UnaryOperator::Plus")),
                 UnaryOperator::Minus => Err(QueryError::not_impl("UnaryOperator::Minus")),
-                UnaryOperator::Not => Ok(ParsedValue::BoolVal(!val.as_bool().unwrap_or(false))),
+                UnaryOperator::Not => Ok(Arc::new(ParsedValue::BoolVal(!val.as_bool().unwrap_or(false)))),
                 UnaryOperator::PGBitwiseNot => {
                     Err(QueryError::not_impl("UnaryOperator::PGBitwiseNot"))
                 }
@@ -449,7 +449,7 @@ pub fn eval_expr(
                 //Value::Number(x, _) => {}
                 Value::SingleQuotedString(x) => {
                     let s: &String = x;
-                    Ok(ParsedValue::StrVal(Arc::new(s.clone())))
+                    Ok(Arc::new(ParsedValue::StrVal(Arc::new(s.clone()))))
                 }
                 Value::NationalStringLiteral(_) => {
                     Err(QueryError::not_impl("Value::NationalStringLiteral"))
@@ -457,11 +457,11 @@ pub fn eval_expr(
                 Value::HexStringLiteral(_) => Err(QueryError::not_impl("Value::HexStringLiteral")),
                 Value::DoubleQuotedString(x) => {
                     let s: &String = x;
-                    Ok(ParsedValue::StrVal(Arc::new(s.clone())))
+                    Ok(Arc::new(ParsedValue::StrVal(Arc::new(s.clone()))))
                 }
-                Value::Boolean(b) => Ok(ParsedValue::BoolVal(*b)),
+                Value::Boolean(b) => Ok(Arc::new(ParsedValue::BoolVal(*b))),
                 Value::Interval { .. } => Err(QueryError::not_impl("Value::Interval")),
-                Value::Null => Ok(ParsedValue::NullVal),
+                Value::Null => Ok(Arc::new(ParsedValue::NullVal)),
                 Value::Placeholder(_) => Err(QueryError::not_impl("Value::Placeholder")),
                 #[allow(unreachable_patterns)]
                 // XXX the IntelliJ IDE does not see this as unreachable
@@ -656,8 +656,9 @@ pub fn eval_integer_expr(
     dctx: &mut LazyContext,
     name: &str,
 ) -> Result<i64, QueryError> {
-    match eval_expr(expr, ctx, dctx)? {
-        ParsedValue::LongVal(x) => Ok(x),
+    let eval_res = eval_expr(expr, ctx, dctx)?;
+    match eval_res.as_ref() {
+        ParsedValue::LongVal(x) => Ok(*x),
         x => Err(QueryError::new(&format!(
             "Expression did not evauluate to an integer number ({}): {:?} , expr: {:?}",
             name, x, expr

@@ -153,10 +153,10 @@ pub mod tests {
         QlRow::new(
             None,
             vec![
-                (Arc::from("blah1"), ParsedValue::LongVal(42)),
+                (Arc::from("blah1"), Arc::new(ParsedValue::LongVal(42))),
                 (
                     Arc::from("blah2"),
-                    ParsedValue::StrVal(Arc::new("blah 2 value".to_string())),
+                    Arc::new(ParsedValue::StrVal(Arc::new("blah 2 value".to_string()))),
                 ),
             ],
         )

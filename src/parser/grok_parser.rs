@@ -159,13 +159,13 @@ impl LogParser for GrokParser {
         let mopt = self.pattern.match_against(msg.as_str());
         if mopt.is_some() {
             let m = mopt.unwrap();
-            let mut hm: HashMap<Arc<str>, ParsedValue> = HashMap::new();
+            let mut hm: HashMap<Arc<str>, Arc<ParsedValue>> = HashMap::new();
             for c in &self.schema.columns {
                 let mut found = false;
                 for lnm in &c.lookup_names {
                     let mm = m.get(lnm.as_str());
                     if mm.is_some() {
-                        let opv: Option<ParsedValue> = str2val(mm.unwrap(), c.col_type());
+                        let opv: Option<Arc<ParsedValue>> = str2val(mm.unwrap(), c.col_type());
                         if opv.is_some() {
                             hm.insert(Arc::from(lnm.as_str()), opv.unwrap());
                             found = true;

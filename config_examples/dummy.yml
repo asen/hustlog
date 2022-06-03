@@ -1,0 +1,26 @@
+
+input: "-"
+merge_multi_line: false
+grok_pattern: DUMMY
+grok_schema_columns:
+  - "+timestamp:ts:%Y-%m-%dT%H:%M:%S"
+  - "+num:int"
+  - "+message"
+# grok_patterns_file: Option<String>
+grok_with_alias_only: false
+grok_ignore_default_patterns: false
+grok_extra_patterns:
+  - "DUMMY %{TIMESTAMP_ISO8601:timestamp} %{NUMBER:num} +%{GREEDYDATA:message}"
+
+# query: "SELECT ..."
+
+output: "-"
+output_format: csv
+output_batch_size: 1000
+output_add_ddl: false
+
+rayon_threads: 2
+tick_interval: 30
+idle_timeout: 30
+async_channel_size: 2000
+async_file_processing: true

@@ -11,7 +11,7 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::Arc;
 use crate::DynError;
-use crate::parser::{GrokSchema, ParsedValue, ParserIterator, RawMessage};
+use crate::parser::{GrokSchema, arc_null_pv, ParsedValue, ParserIterator, RawMessage};
 
 pub trait QlInputTable {
     fn read_row(&mut self) -> Result<Option<QlRow>, DynError>;
@@ -115,36 +115,38 @@ impl QlOutputTable for QlMemTable {
         offset: i64,
         order_by_exprs: &Vec<(usize, bool)>,
     ) -> Box<&dyn QlInputTable> {
-        let nval = ParsedValue::NullVal;
+        let arc_null_pv = Arc::new(ParsedValue::NullVal);
         self.buf.sort_by(|x, y| {
-            let x_sk: Vec<(&ParsedValue, bool)> = order_by_exprs
+            let x_sk: Vec<(Arc<ParsedValue>, bool)> = order_by_exprs
                 .iter()
                 .map(|(pos, asc)| {
-                    let pv: &ParsedValue = x.data().get(*pos).map(|(_rc, v)| v).unwrap_or(&nval);
-                    (pv, *asc)
+                    let pv: &Arc<ParsedValue> = x.data().get(*pos)
+                        .map(|(_rc, v)| v).unwrap_or(&arc_null_pv);
+                    (Arc::clone(pv), *asc)
                 })
                 .collect::<Vec<_>>();
-            let y_sk: Vec<(&ParsedValue, bool)> = order_by_exprs
+            let y_sk: Vec<(Arc<ParsedValue>, bool)> = order_by_exprs
                 .iter()
                 .map(|(pos, asc)| {
-                    let pv: &ParsedValue = y.data().get(*pos).map(|(_rc, v)| v).unwrap_or(&nval);
-                    (pv, *asc)
+                    let pv: &Arc<ParsedValue> = y.data().get(*pos)
+                        .map(|(_rc, v)| v).unwrap_or(&arc_null_pv);
+                    (Arc::clone(pv), *asc)
                 })
                 .collect::<Vec<_>>();
 
-            let neq: Option<(&(&ParsedValue, bool), &(&ParsedValue, bool))> =
-                x_sk.iter().zip(y_sk.iter()).find(|(&l, &r)| *l.0 != *r.0);
-            if neq.is_none() {
-                Ordering::Equal
-            } else {
-                let ((l, ascl), (r, _ascr)) = neq.unwrap();
-                if *ascl {
-                    l.partial_cmp(&r).unwrap_or(Ordering::Less)
-                } else {
-                    //desc
-                    l.partial_cmp(&r).unwrap_or(Ordering::Less).reverse()
+            let mut ord = None;
+            for (lh, rh) in x_sk.iter().zip(y_sk) {
+                if lh.0 != rh.0 {
+                    if lh.1 {
+                        ord = Some(lh.0.partial_cmp(&rh.0).unwrap_or(Ordering::Less))
+                    } else {
+                        //desc
+                        ord = Some(lh.0.partial_cmp(&rh.0).unwrap_or(Ordering::Less).reverse())
+                    }
+                    break;
                 }
             }
+            ord.unwrap_or(Ordering::Equal)
         });
 
         if offset > 0 {
@@ -204,7 +206,7 @@ impl QlInputTable for QlParserIteratorInputTable {
 }
 
 #[derive(Eq, Hash, PartialEq, Debug)]
-struct QlGroupByKey(Vec<(Arc<str>, ParsedValue)>);
+struct QlGroupByKey(Vec<(Arc<str>, Arc<ParsedValue>)>);
 
 struct QlGroupByContext {
     //gb_key_ixes: Vec<usize>,
@@ -275,8 +277,9 @@ impl QlGroupByContext {
                             "Can not use aggregate functions combined with wildcard/raw message specifier")))
                     }
                     QlSelectItem::LazyExpr(_) => {
-                        let pv = lazy_ex_iter.next().unwrap().clone();
-                        outp_row.push(pv)
+                        let pv = lazy_ex_iter.next().unwrap(); //.clone();
+                        let pvc = (Arc::clone(&pv.0), Arc::clone(&pv.1));
+                        outp_row.push(pvc)
                     }
                     QlSelectItem::AggExpr(_) => {
                         let ae = agg_exprs_iter.next().unwrap();
@@ -346,13 +349,13 @@ fn eval_lazy_ctxs(
     select_c: &QlSelectCols,
     static_ctx: &QlRowContext,
     lazy_ctx: &mut LazyContext,
-) -> Result<Vec<(Arc<str>, ParsedValue)>, QueryError> {
-    let mut outp_vals: Vec<(Arc<str>, ParsedValue)> = Vec::new();
+) -> Result<Vec<(Arc<str>, Arc<ParsedValue>)>, QueryError> {
+    let mut outp_vals: Vec<(Arc<str>, Arc<ParsedValue>)> = Vec::new();
     let lazy_exp_vec = select_c.lazy_exprs();
     for le in lazy_exp_vec {
         let pv = lazy_ctx
             .get_value(le.name(), &static_ctx)?
-            .unwrap_or(ParsedValue::NullVal);
+            .unwrap_or(arc_null_pv());
         outp_vals.push((le.name().clone(), pv));
     }
     Ok(outp_vals)
