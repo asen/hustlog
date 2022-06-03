@@ -99,7 +99,7 @@ pub struct MyArgs {
     /// Potentially temporary option - to test sync (single-threaded) vs async file I/O performance
     /// set to true to use the async pipeline, may change the default too (currently default is false).
     #[clap(long)]
-    pub async_file_processing: bool,
+    pub async_file_processing: Option<bool>,
 
 }
 

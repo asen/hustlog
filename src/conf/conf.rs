@@ -146,6 +146,11 @@ impl HustlogConfig {
             args_or_external_opt_default!(&args, &external_conf, output_batch_size, &1000);
         let output_add_ddl =
             args_or_external_bool_default!(&args, &external_conf, output_add_ddl, false);
+        let async_file_processing = if args.async_file_processing.is_some() {
+            args.async_file_processing.unwrap()
+        } else {
+            external_conf.async_file_processing.unwrap_or(true)
+        };
         Ok(Self {
             input: input.to_string(),
             merge_multi_line: merge_multi_line,
@@ -174,12 +179,7 @@ impl HustlogConfig {
                 async_channel_size,
                 &1000
             ),
-            async_file_processing: args_or_external_bool_default!(
-                &args,
-                &external_conf,
-                async_file_processing,
-                false
-            ),
+            async_file_processing,
         })
     }
 
@@ -445,7 +445,7 @@ mod tests {
             tick_interval: None,
             idle_timeout: None,
             async_channel_size: None,
-            async_file_processing: false,
+            async_file_processing: None,
         }
     }
 

@@ -89,7 +89,7 @@ mod tests {
     #[test]
     fn test_example_config() {
         let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        d.push("../../config_examples/syslog.yml");
+        d.push("config_examples/syslog.yml");
 
         let pc = ExternalConfig::from_yaml_file(d.to_str().unwrap()).unwrap();
         println!("{:?}", pc)
