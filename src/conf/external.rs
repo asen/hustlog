@@ -1,7 +1,7 @@
+use crate::DynError;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::BufReader;
-use crate::DynError;
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct ExternalConfig {
@@ -29,8 +29,7 @@ pub struct ExternalConfig {
     pub idle_timeout: Option<u64>,
 
     pub async_channel_size: Option<usize>,
-
-    pub async_file_processing: Option<bool>,
+    //pub async_file_processing: Option<bool>,
 }
 
 impl ExternalConfig {
@@ -62,7 +61,7 @@ impl ExternalConfig {
             tick_interval: None,
             idle_timeout: None,
             async_channel_size: None,
-            async_file_processing: None,
+            // async_file_processing: None,
         }
     }
 }

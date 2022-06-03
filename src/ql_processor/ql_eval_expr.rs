@@ -2,12 +2,12 @@ use std::collections::HashMap;
 use std::ops::{Add, Div, Mul, Rem, Sub};
 use std::sync::Arc;
 
+use crate::parser::{arc_null_pv, str2val, ParsedValue, ParsedValueType, TimeTypeFormat};
 use crate::ql_processor::ql_schema::QlRowContext;
 use crate::ql_processor::QueryError;
 use sqlparser::ast::{
     BinaryOperator, Expr, Function, FunctionArg, FunctionArgExpr, ObjectName, UnaryOperator, Value,
 };
-use crate::parser::{arc_null_pv, ParsedValue, ParsedValueType, str2val, TimeTypeFormat};
 
 // pub struct StaticCtx<'a> {
 //     pd: Option<&'a ParsedData>,
@@ -177,7 +177,9 @@ fn func_arg_to_pv(
             FunctionArgExpr::QualifiedWildcard(_) => Err(QueryError::not_supported(
                 "FunctionArgExpr::QualifiedWildcard",
             )),
-            FunctionArgExpr::Wildcard => Ok(Arc::new(ParsedValue::StrVal(Arc::new("*".to_string())))),
+            FunctionArgExpr::Wildcard => {
+                Ok(Arc::new(ParsedValue::StrVal(Arc::new("*".to_string()))))
+            }
         },
     }
 }
@@ -298,11 +300,15 @@ pub fn eval_expr(
         Expr::CompoundIdentifier(_) => Err(QueryError::not_impl("Expr::CompoundIdentifier")),
         Expr::IsNull(x) => {
             let res = eval_expr(x, ctx, dctx)?;
-            Ok(Arc::new(ParsedValue::BoolVal(res.as_ref() == &ParsedValue::NullVal)))
+            Ok(Arc::new(ParsedValue::BoolVal(
+                res.as_ref() == &ParsedValue::NullVal,
+            )))
         }
         Expr::IsNotNull(x) => {
             let res = eval_expr(x, ctx, dctx)?;
-            Ok(Arc::new(ParsedValue::BoolVal(res.as_ref() != &ParsedValue::NullVal)))
+            Ok(Arc::new(ParsedValue::BoolVal(
+                res.as_ref() != &ParsedValue::NullVal,
+            )))
         }
         Expr::IsDistinctFrom(_, _) => Err(QueryError::not_impl("Expr::IsDistinctFrom")),
         Expr::IsNotDistinctFrom(_, _) => Err(QueryError::not_impl("Expr::IsNotDistinctFrom")),
@@ -321,20 +327,24 @@ pub fn eval_expr(
             let mut arithmetic_op = |op: &BinaryOperator| {
                 let rvalv: Arc<ParsedValue> = rval()?;
                 match (lval.as_ref(), rvalv.as_ref()) {
-                    (ParsedValue::LongVal(lv), ParsedValue::LongVal(rv)) => {
-                        Ok(Arc::new(ParsedValue::LongVal(eval_aritmethic_op(*lv, *rv, &op)?)))
-                    }
+                    (ParsedValue::LongVal(lv), ParsedValue::LongVal(rv)) => Ok(Arc::new(
+                        ParsedValue::LongVal(eval_aritmethic_op(*lv, *rv, &op)?),
+                    )),
                     (ParsedValue::DoubleVal(lv), ParsedValue::LongVal(rv)) => {
                         let rvd = *rv as f64;
-                        Ok(Arc::new(ParsedValue::DoubleVal(eval_aritmethic_op(*lv, rvd, &op)?)))
+                        Ok(Arc::new(ParsedValue::DoubleVal(eval_aritmethic_op(
+                            *lv, rvd, &op,
+                        )?)))
                     }
                     (ParsedValue::LongVal(lv), ParsedValue::DoubleVal(rv)) => {
                         let lvd = *lv as f64;
-                        Ok(Arc::new(ParsedValue::DoubleVal(eval_aritmethic_op(lvd, *rv, &op)?)))
+                        Ok(Arc::new(ParsedValue::DoubleVal(eval_aritmethic_op(
+                            lvd, *rv, &op,
+                        )?)))
                     }
-                    (ParsedValue::DoubleVal(lv), ParsedValue::DoubleVal(rv)) => {
-                        Ok(Arc::new(ParsedValue::DoubleVal(eval_aritmethic_op(*lv, *rv, &op)?)))
-                    }
+                    (ParsedValue::DoubleVal(lv), ParsedValue::DoubleVal(rv)) => Ok(Arc::new(
+                        ParsedValue::DoubleVal(eval_aritmethic_op(*lv, *rv, &op)?),
+                    )),
                     _ => Err(QueryError::incompatible_types(&lval, &rvalv, &op)),
                 }
             };
@@ -408,7 +418,9 @@ pub fn eval_expr(
             match op {
                 UnaryOperator::Plus => Err(QueryError::not_impl("UnaryOperator::Plus")),
                 UnaryOperator::Minus => Err(QueryError::not_impl("UnaryOperator::Minus")),
-                UnaryOperator::Not => Ok(Arc::new(ParsedValue::BoolVal(!val.as_bool().unwrap_or(false)))),
+                UnaryOperator::Not => Ok(Arc::new(ParsedValue::BoolVal(
+                    !val.as_bool().unwrap_or(false),
+                ))),
                 UnaryOperator::PGBitwiseNot => {
                     Err(QueryError::not_impl("UnaryOperator::PGBitwiseNot"))
                 }

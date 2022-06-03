@@ -1,10 +1,9 @@
-
-use log::info;
-use std::sync::Arc;
 use crate::async_pipeline::create_processing_pipeline;
-use crate::{DynError, HustlogConfig};
 use crate::syslog_server::tcp_server::{ConnectionError, TcpServerConnection};
 use crate::syslog_server::udp_server::UdpServerState;
+use crate::{DynError, HustlogConfig};
+use log::info;
+use std::sync::Arc;
 
 pub async fn server_main(hc: HustlogConfig) -> Result<(), DynError> {
     let sc = match hc.get_syslog_server_config() {

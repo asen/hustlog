@@ -38,7 +38,7 @@ impl SqlBatchProcessor {
     ) -> Result<Self, DynError> {
         let (tx, rx) = tokio::sync::mpsc::channel(channel_size);
         let query = Arc::new(SqlSelectQuery::new(query)?);
-        let result_cols = get_res_cols(&schema, &query);
+        let result_cols = get_res_cols(&query);
         let select_cols = Arc::new(QlSelectCols::new(result_cols));
         let input_schema = QlSchema::from(&schema);
         let output_schema = select_cols.to_out_schema(&input_schema)?;
@@ -173,7 +173,7 @@ mod tests {
     #[tokio::test]
     async fn test_sql_batch_processor1() {
         init_test_rayon_pool();
-        let (test_queue_sender, test_queue_jh) = TestMessageQueue::create(2);
+        let (test_queue_sender, test_queue_jh) = TestMessageQueue::create(2, true, false);
         let schema = test_dummy_schema();
         let ql_schema = Arc::new(QlSchema::from(&schema));
         let bp = SqlBatchProcessor::new("select * from DUMMY", &schema, 2).unwrap();
@@ -195,5 +195,6 @@ mod tests {
         assert_eq!(test_queue.received, 1);
         assert_eq!(test_queue.flushed, 1);
         assert_eq!(test_queue.shutdown, 1);
+        assert_eq!(test_queue.buf[0].len(), 100)
     }
 }

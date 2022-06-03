@@ -23,4 +23,3 @@ rayon_threads: 2
 tick_interval: 30
 idle_timeout: 30
 async_channel_size: 2000
-async_file_processing: true

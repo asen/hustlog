@@ -1,6 +1,6 @@
 use crate::parser::{ParsedValueType, ParserColDef, ParserSchema};
-use std::sync::Arc;
 use crate::ql_processor::QlSchema;
+use std::sync::Arc;
 
 pub struct SqlCreateCol {
     name: Arc<str>,

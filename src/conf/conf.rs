@@ -1,14 +1,14 @@
 use crate::conf::external::ExternalConfig;
+use crate::parser::{str2type, GrokColumnDef, GrokSchema};
 use crate::syslog_server::SyslogServerConfig;
+use crate::{ConfigError, MyArgs};
 use std::error::Error;
 use std::fs;
-use std::io::{self, BufRead, BufReader, BufWriter, Write};
+use std::io::{self, BufWriter, Write};
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::io::AsyncRead;
 use tokio_rayon::rayon::ThreadPoolBuilder;
-use crate::{ConfigError, MyArgs};
-use crate::parser::{GrokColumnDef, GrokSchema, str2type};
 
 macro_rules! args_or_external_vec {
     ($a:expr,$b:expr, $prop:ident, $err: expr) => {
@@ -95,7 +95,7 @@ macro_rules! args_or_external_bool_default {
 
 pub type DynError = Box<dyn Error + Send + Sync>;
 pub type DynBoxWrite = Box<dyn Write + Send + Sync>;
-pub type DynBufRead = Box<dyn BufRead + Send + Sync>;
+//pub type DynBufRead = Box<dyn BufRead + Send + Sync>;
 
 //pub type DynBoxAsyncWrite = Box<dyn AsyncWrite + Send + Sync>;
 pub type DynAsyncRead = Box<dyn AsyncRead + Send + Sync>;
@@ -124,7 +124,7 @@ pub struct HustlogConfig {
     idle_timeout: u64,
 
     async_channel_size: usize,
-    async_file_processing: bool,
+    //async_file_processing: bool,
 }
 
 impl HustlogConfig {
@@ -141,16 +141,17 @@ impl HustlogConfig {
             Some(query_str_ref.to_string())
         };
         let output = args_or_external_opt_default!(&args, &external_conf, output, "-");
-        let output_format = args_or_external_opt_default!(&args, &external_conf, output_format, "csv");
+        let output_format =
+            args_or_external_opt_default!(&args, &external_conf, output_format, "csv");
         let output_batch_size =
             args_or_external_opt_default!(&args, &external_conf, output_batch_size, &1000);
         let output_add_ddl =
             args_or_external_bool_default!(&args, &external_conf, output_add_ddl, false);
-        let async_file_processing = if args.async_file_processing.is_some() {
-            args.async_file_processing.unwrap()
-        } else {
-            external_conf.async_file_processing.unwrap_or(true)
-        };
+        // let async_file_processing = if args.async_file_processing.is_some() {
+        //     args.async_file_processing.unwrap()
+        // } else {
+        //     external_conf.async_file_processing.unwrap_or(true)
+        // };
         Ok(Self {
             input: input.to_string(),
             merge_multi_line: merge_multi_line,
@@ -167,19 +168,14 @@ impl HustlogConfig {
                 tick_interval,
                 &30
             ),
-            idle_timeout: *args_or_external_opt_default!(
-                &args,
-                &external_conf,
-                idle_timeout,
-                &30
-            ),
+            idle_timeout: *args_or_external_opt_default!(&args, &external_conf, idle_timeout, &30),
             async_channel_size: *args_or_external_opt_default!(
                 &args,
                 &external_conf,
                 async_channel_size,
                 &1000
             ),
-            async_file_processing,
+            //async_file_processing,
         })
     }
 
@@ -279,14 +275,14 @@ impl HustlogConfig {
         ))
     }
 
-    pub fn get_buf_read(&self) -> Result<DynBufRead, DynError> {
-        let reader: DynBufRead = if &self.input == "-" {
-            Box::new(BufReader::new(io::stdin()))
-        } else {
-            Box::new(BufReader::new(fs::File::open(&self.input)?))
-        };
-        Ok(reader)
-    }
+    // pub fn get_buf_read(&self) -> Result<DynBufRead, DynError> {
+    //     let reader: DynBufRead = if &self.input == "-" {
+    //         Box::new(BufReader::new(io::stdin()))
+    //     } else {
+    //         Box::new(BufReader::new(fs::File::open(&self.input)?))
+    //     };
+    //     Ok(reader)
+    // }
 
     pub fn get_outp(&self) -> Result<DynBoxWrite, DynError> {
         let writer: DynBoxWrite = if &self.output == "-" {
@@ -296,7 +292,7 @@ impl HustlogConfig {
                 fs::OpenOptions::new()
                     .create(true)
                     .append(true)
-                    .open(&self.output)?
+                    .open(&self.output)?,
             ))
         };
         Ok(writer)
@@ -310,7 +306,6 @@ impl HustlogConfig {
         };
         Ok(reader)
     }
-
 
     // pub async fn get_async_outp(&self) -> Result<DynBoxAsyncWrite, DynError> {
     //     let writer: DynBoxAsyncWrite = if &self.output == "-" {
@@ -357,9 +352,9 @@ impl HustlogConfig {
         self.input.starts_with("syslog-tcp:") || self.input.starts_with("syslog-udp:")
     }
 
-    pub fn async_file_processing(&self) -> bool {
-        self.async_file_processing
-    }
+    // pub fn async_file_processing(&self) -> bool {
+    //     self.async_file_processing
+    // }
 
     pub fn get_syslog_server_config(&self) -> Result<SyslogServerConfig, ConfigError> {
         if !self.input_is_syslog_server() {
@@ -445,7 +440,7 @@ mod tests {
             tick_interval: None,
             idle_timeout: None,
             async_channel_size: None,
-            async_file_processing: None,
+            //async_file_processing: None,
         }
     }
 

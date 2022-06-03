@@ -5,14 +5,11 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
 use std::hash::{Hash, Hasher};
-use std::io;
 use std::rc::Rc;
 use std::sync::Arc;
 
 use chrono::Datelike;
 use chrono::{DateTime, FixedOffset, Local, NaiveDateTime, Offset, TimeZone};
-use log::error;
-use crate::parser::LineMerger;
 
 #[derive(Debug, Clone)]
 pub struct RawMessage(String);
@@ -69,8 +66,6 @@ impl fmt::Display for LogParseError {
 }
 
 impl Error for LogParseError {}
-
-// pub const ARC_NULL_PV: Arc<ParsedValue> = Arc::new(ParsedValue::NullVal);
 
 pub fn arc_null_pv() -> Arc<ParsedValue> {
     Arc::new(ParsedValue::NullVal)
@@ -275,14 +270,6 @@ pub enum ParsedValueType {
     StrType,
 }
 
-// impl ParsedValueType {
-//     pub fn clone(&self) -> ParsedValueType {
-//         match self {
-//             case &ParsedValueType::TimeType(b) => ParsedValueType::TimeType(Box::new(*b.clone()))
-//         }
-//     }
-// }
-
 fn parse_ts(s: &str, fmt: &TimeTypeFormat) -> Option<DateTime<FixedOffset>> {
     let needs_year_str: String;
     let to_parse = if fmt.needs_year {
@@ -325,7 +312,7 @@ pub fn str2val(s: &str, ctype: &ParsedValueType) -> Option<Arc<ParsedValue>> {
             }
         }
     };
-    pv_opt.map(|pv| { Arc::new(pv) })
+    pv_opt.map(|pv| Arc::new(pv))
 }
 
 pub fn str2type(s: &str) -> Option<ParsedValueType> {
@@ -390,116 +377,9 @@ pub trait LogParser {
     fn parse(&self, msg: RawMessage) -> Result<ParsedMessage, LogParseError>;
 }
 
-pub struct ParseErrorProcessor {
-    //stderr: Box<dyn Write>,
-}
-
-impl ParseErrorProcessor {
-    pub fn new(
-        //stderr: Box<dyn Write>
-    ) -> ParseErrorProcessor {
-        ParseErrorProcessor {
-            // stderr: stderr
-        }
-    }
-
-    pub fn process(&mut self, msg: RawMessage, err: &str) -> () {
-        let s = ["PARSE ERROR: ", err, " RAW: ", msg.as_str(), "\n"].join("");
-        error!("ParseErrorProcessor: {}", s);
-    }
-}
-
-pub struct ParserIterator {
-    parser: Box<dyn LogParser>,
-    line_merger: Option<Box<dyn LineMerger>>,
-    input_iterator: Box<dyn Iterator<Item = io::Result<String>>>,
-    error_processor: ParseErrorProcessor,
-}
-
-impl ParserIterator {
-    pub fn new(
-        parser: Box<dyn LogParser>,
-        line_merger: Option<Box<dyn LineMerger>>,
-        input_iterator: Box<dyn Iterator<Item = io::Result<String>>>,
-        error_processor: ParseErrorProcessor,
-    ) -> ParserIterator {
-        Self {
-            parser,
-            line_merger,
-            input_iterator,
-            error_processor,
-        }
-    }
-
-    fn next_raw(&mut self) -> Option<RawMessage> {
-        let inp_next = self.input_iterator.next();
-        match inp_next {
-            None => {
-                if self.line_merger.is_some() {
-                    self.line_merger.as_mut().unwrap().flush()
-                } else {
-                    None
-                }
-            }
-            Some(x) => {
-                match x {
-                    Ok(s) => {
-                        if self.line_merger.is_some() {
-                            let mut ret = self.line_merger.as_mut().unwrap().add_line(s);
-                            while ret.is_none() {
-                                if let Some(res_str) = self.input_iterator.next() {
-                                    if let Ok(ss) = res_str {
-                                        ret = self.line_merger.as_mut().unwrap().add_line(ss)
-                                    } else {
-                                        break;
-                                    }
-                                } else {
-                                    ret = self.line_merger.as_mut().unwrap().flush();
-                                    break;
-                                }
-                            }
-                            ret
-                        } else {
-                            // no line merger
-                            Some(RawMessage::new(s))
-                        }
-                    }
-                    Err(_) => {
-                        None // TODO log?
-                    }
-                }
-            }
-        }
-    }
-}
-
-impl Iterator for ParserIterator {
-    type Item = ParsedMessage;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some(raw) = self.next_raw() {
-            let mut parsed = self.parser.parse(raw);
-            while parsed.is_err() {
-                let LogParseError { raw_msg, desc } = parsed.err().unwrap();
-                self.error_processor.process(raw_msg, &desc);
-                let nraw = self.next_raw();
-                if nraw.is_none() {
-                    return None;
-                }
-                parsed = self.parser.parse(nraw.unwrap());
-            }
-            parsed.ok()
-        } else {
-            None
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use chrono::TimeZone;
-
-    use crate::parser::*;
 
     use super::*;
 
@@ -525,7 +405,8 @@ mod tests {
                 "2022-04-20 21:12:55.999+0200",
                 &ParsedValueType::TimeType(TimeTypeFormat::new("%Y-%m-%d %H:%M:%S.%3f%z"))
             )
-            .unwrap().as_ref(),
+            .unwrap()
+            .as_ref(),
             &ParsedValue::TimeVal(
                 FixedOffset::east(7200)
                     .ymd(2022, 4, 20)
@@ -545,7 +426,8 @@ mod tests {
                 "Apr 22 02:34:54",
                 &ParsedValueType::TimeType(TimeTypeFormat::new("%b %e %H:%M:%S"))
             )
-            .unwrap().as_ref(),
+            .unwrap()
+            .as_ref(),
             &ParsedValue::TimeVal(
                 FixedOffset::east(local_timezone_offset())
                     .ymd(2022, 4, 22)
@@ -574,68 +456,5 @@ mod tests {
             .from_local_datetime(&parsed)
             .unwrap();
         println!("{}", parsed)
-    }
-
-    #[test]
-    fn test_parser_iterator() {
-        let schema = GrokSchema::new(
-            String::from("SYSLOGLINE"),
-            vec![
-                GrokColumnDef::new(
-                    Arc::from("timestamp"),
-                    ParsedValueType::TimeType(TimeTypeFormat::new("%b %e %H:%M:%S")),
-                    vec![Arc::new(String::from("timestamp"))],
-                    true,
-                ),
-                GrokColumnDef::new(
-                    Arc::from("message"),
-                    ParsedValueType::StrType,
-                    vec![Arc::new(String::from("message"))],
-                    true,
-                ),
-            ],
-            true,
-            vec![],
-            false,
-        );
-        let lines = vec![
-            "Apr 22 02:34:54 actek-mac login[49532]: USER_PROCESS: 49532 ttys000",
-            "   =========",
-            "Apr 22 04:42:04 actek-mac syslogd[104]: ASL Sender Statistics",
-            "Apr 22 04:42:05 actek-mac syslogd[104]: ASL Sender Statistics",
-            "   =========",
-        ];
-
-        {
-            let lines: Vec<io::Result<String>> =
-                lines.clone().iter().map(|&x| Ok(x.to_string())).collect();
-            let parser = GrokParser::new(schema.clone()).unwrap();
-            let mut pit = ParserIterator::new(
-                Box::new(parser),
-                None,
-                Box::new(lines.into_iter()),
-                ParseErrorProcessor::new(),
-            );
-            println!("No line merger");
-            while let Some(x) = pit.next() {
-                println!("{:?}", x)
-            }
-        }
-
-        {
-            let lines: Vec<io::Result<String>> =
-                lines.clone().iter().map(|&x| Ok(x.to_string())).collect();
-            let parser = GrokParser::new(schema.clone()).unwrap();
-            let mut pit = ParserIterator::new(
-                Box::new(parser),
-                Some(Box::new(SpaceLineMerger::new())),
-                Box::new(lines.into_iter()),
-                ParseErrorProcessor::new(),
-            );
-            println!("With line merger");
-            while let Some(x) = pit.next() {
-                println!("{:?}", x)
-            }
-        }
     }
 }

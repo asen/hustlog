@@ -1,17 +1,15 @@
+use crate::parser::{arc_null_pv, ParsedValue, RawMessage};
 use crate::ql_processor::ql_agg_expr::AggExpr;
 use crate::ql_processor::ql_eval_expr::{eval_expr, eval_integer_expr, LazyContext};
-use crate::ql_processor::ql_schema::{
-    get_res_cols, QlRow, QlRowContext, QlSchema, QlSelectCols, QlSelectItem,
-};
-use crate::ql_processor::{QlRowBatch, QueryError};
+use crate::ql_processor::ql_schema::{QlRow, QlRowContext, QlSchema, QlSelectCols, QlSelectItem};
 use crate::ql_processor::SqlSelectQuery;
-use sqlparser::ast::{Expr, Value};
+use crate::ql_processor::{QlRowBatch, QueryError};
+use crate::DynError;
+use sqlparser::ast::Expr;
 use std::cmp::{min, Ordering};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::Arc;
-use crate::DynError;
-use crate::parser::{GrokSchema, arc_null_pv, ParsedValue, ParserIterator, RawMessage};
 
 pub trait QlInputTable {
     fn read_row(&mut self) -> Result<Option<QlRow>, DynError>;
@@ -28,34 +26,6 @@ pub trait QlOutputTable {
         order_by_exprs: &Vec<(usize, bool)>,
     ) -> Box<&dyn QlInputTable>;
     fn set_schema(&mut self, new_schema: Arc<QlSchema>);
-}
-
-pub struct ParserIteratorInputTable {
-    pit: ParserIterator,
-    ql_schema: Arc<QlSchema>,
-}
-
-impl ParserIteratorInputTable {
-    pub fn new(pit: ParserIterator, ql_schema: Arc<QlSchema>) -> Self {
-        Self { pit, ql_schema }
-    }
-}
-
-impl QlInputTable for ParserIteratorInputTable {
-    fn read_row(&mut self) -> Result<Option<QlRow>, DynError> {
-        let pm = self.pit.next();
-        if pm.is_none() {
-            return Ok(None);
-        }
-        Ok(Some(QlRow::from_parsed_message(
-            pm.unwrap(),
-            &self.ql_schema,
-        )))
-    }
-
-    fn ql_schema(&self) -> &Arc<QlSchema> {
-        &self.ql_schema
-    }
 }
 
 pub struct QlMemTable {
@@ -84,13 +54,13 @@ impl QlMemTable {
         }
     }
 
+    pub fn consume_rows(self) -> QlRowBatch {
+        self.buf
+    }
+
     #[cfg(test)]
     pub fn get_rows(&self) -> &Vec<QlRow> {
         &self.buf
-    }
-
-    pub fn consume_rows(self) -> QlRowBatch {
-        self.buf
     }
 }
 
@@ -120,16 +90,16 @@ impl QlOutputTable for QlMemTable {
             let x_sk: Vec<(Arc<ParsedValue>, bool)> = order_by_exprs
                 .iter()
                 .map(|(pos, asc)| {
-                    let pv: &Arc<ParsedValue> = x.data().get(*pos)
-                        .map(|(_rc, v)| v).unwrap_or(&arc_null_pv);
+                    let pv: &Arc<ParsedValue> =
+                        x.data().get(*pos).map(|(_rc, v)| v).unwrap_or(&arc_null_pv);
                     (Arc::clone(pv), *asc)
                 })
                 .collect::<Vec<_>>();
             let y_sk: Vec<(Arc<ParsedValue>, bool)> = order_by_exprs
                 .iter()
                 .map(|(pos, asc)| {
-                    let pv: &Arc<ParsedValue> = y.data().get(*pos)
-                        .map(|(_rc, v)| v).unwrap_or(&arc_null_pv);
+                    let pv: &Arc<ParsedValue> =
+                        y.data().get(*pos).map(|(_rc, v)| v).unwrap_or(&arc_null_pv);
                     (Arc::clone(pv), *asc)
                 })
                 .collect::<Vec<_>>();
@@ -183,28 +153,6 @@ impl QlInputTable for QlMemTable {
     }
 }
 
-struct QlParserIteratorInputTable {
-    schema: Arc<QlSchema>,
-    pit: ParserIterator,
-}
-
-impl QlInputTable for QlParserIteratorInputTable {
-    fn read_row(&mut self) -> Result<Option<QlRow>, DynError> {
-        let pit_next = self.pit.next();
-        if pit_next.is_none() {
-            return Ok(None);
-        }
-        let pm = pit_next.unwrap();
-
-        let ret = QlRow::from_parsed_message(pm, self.schema.as_ref());
-        Ok(Some(ret))
-    }
-
-    fn ql_schema(&self) -> &Arc<QlSchema> {
-        &self.schema
-    }
-}
-
 #[derive(Eq, Hash, PartialEq, Debug)]
 struct QlGroupByKey(Vec<(Arc<str>, Arc<ParsedValue>)>);
 
@@ -215,8 +163,7 @@ struct QlGroupByContext {
 }
 
 impl QlGroupByContext {
-    pub fn new(//gb_key_ixes: Vec<usize>
-    ) -> Self {
+    pub fn new() -> Self {
         Self {
             //gb_key_ixes,
             by_gb_key: HashMap::new(),
@@ -476,120 +423,83 @@ pub fn get_order_by_exprs(
     }
     Ok(order_by_exprs)
 }
-pub fn process_sql(
-    schema: &GrokSchema,
-    pit: ParserIterator,
-    query: &str,
-    mut out_table: Box<&mut dyn QlOutputTable>,
-) -> Result<(), DynError> {
-    //println!("process_sql: {}", schema.columns().len());
-    let qry = Arc::new(SqlSelectQuery::new(query)?);
-    let ql_schema = Arc::new(QlSchema::from(schema));
-    let mut in_table = QlParserIteratorInputTable {
-        schema: Arc::clone(&ql_schema),
-        pit,
-    };
-    let mut in_table_ref: Box<&mut dyn QlInputTable> = Box::new(&mut in_table);
-    // let mut out_table = QlMemTable::new(
-    //     //&ql_schema
-    // );
-    // let mut out_table_ref: Box<&mut dyn QlOutputTable> = Box::new(&mut out_table);
-    let res_cols = get_res_cols(schema, &qry);
-    let select_c = Arc::new(QlSelectCols::new(res_cols));
-    out_table.set_schema(Arc::new(select_c.to_out_schema(ql_schema.as_ref())?));
-    let true_expr = Expr::Value(Value::Boolean(true));
-    let where_c: Arc<Expr> = Arc::from(
-        qry
-            .get_select()
-            .selection
-            .as_ref()
-            .unwrap_or(&true_expr)
-            .clone()
-    );
-    let mut empty_lazy_context = LazyContext::empty();
-    let limit = get_limit(&qry, &mut empty_lazy_context)?;
-    let offset = get_offset(&qry, &mut empty_lazy_context)?;
-
-    //println!("process_sql: {}", select_c.cols().len());
-    let group_by_exprs = Arc::new(get_group_by_exprs(&qry, &mut empty_lazy_context)?);
-    let order_by_exprs = Arc::new(get_order_by_exprs(&qry, &mut empty_lazy_context)?);
-    eval_query(
-        select_c,
-        where_c,
-        limit,
-        offset,
-        group_by_exprs,
-        order_by_exprs,
-        &mut in_table_ref,
-        &mut out_table,
-    )?;
-    // match res {
-    //     Ok(r) => Ok(r),
-    //     Err(e) => Err(Box::new(e)),
-    // }
-    Ok(())
-}
 
 #[cfg(test)]
-mod tests {
-    use std::io::{BufRead, BufReader};
+pub mod tests {
+    use crate::async_pipeline::LinesBuffer;
+    use bytes::BufMut;
+    use sqlparser::ast::Value;
     use std::sync::Arc;
 
-    use crate::parser::test_syslog_schema;
-    use crate::DynError;
-    use crate::ql_processor::{QlMemTable, QlSchema};
+    use crate::parser::{test_syslog_schema, GrokSchema, LogParser};
+    use crate::ql_processor::{get_res_cols, QlMemTable, QlSchema};
+    use crate::{DynError, GrokParser};
 
-    use super::process_sql;
+    use super::*;
 
-    // fn get_logger() -> Box<dyn Write> {
-    //     Box::new(BufWriter::new(std::io::stderr()))
-    // }
+    pub fn process_sql_test(
+        query: &str,
+        mut in_table: Box<&mut dyn QlInputTable>,
+        mut out_table: Box<&mut dyn QlOutputTable>,
+    ) -> Result<(), DynError> {
+        //println!("process_sql: {}", schema.columns().len());
+        let qry = Arc::new(SqlSelectQuery::new(query)?);
+        let ql_schema = in_table.ql_schema().clone();
+        let res_cols = get_res_cols(&qry);
+        let select_c = Arc::new(QlSelectCols::new(res_cols));
+        out_table.set_schema(Arc::new(select_c.to_out_schema(ql_schema.as_ref())?));
+        let true_expr = Expr::Value(Value::Boolean(true));
+        let where_c: Arc<Expr> = Arc::from(
+            qry.get_select()
+                .selection
+                .as_ref()
+                .unwrap_or(&true_expr)
+                .clone(),
+        );
+        let mut empty_lazy_context = LazyContext::empty();
+        let limit = get_limit(&qry, &mut empty_lazy_context)?;
+        let offset = get_offset(&qry, &mut empty_lazy_context)?;
 
-    // #[test]
-    // fn test_eval_expr() {
-    //     let expr = Box::new(BinaryOp {
-    //         left: Box::new(BinaryOp {
-    //             left: Box::new(Identifier(Ident {
-    //                 value: "a".to_string(),
-    //                 quote_style: None,
-    //             })),
-    //             op: Gt,
-    //             right: Box::new(Identifier(Ident {
-    //                 value: "b".to_string(),
-    //                 quote_style: None,
-    //             })),
-    //         }),
-    //         op: And,
-    //         right: Box::new(BinaryOp {
-    //             left: Box::new(Identifier(Ident {
-    //                 value: "b".to_string(),
-    //                 quote_style: None,
-    //             })),
-    //             op: Lt,
-    //             right: Box::new(Value(Number("100".to_string(), false))),
-    //         }),
-    //     });
-    //     let hm = HashMap::from([
-    //         (Rc::from("a"), ParsedValue::LongVal(150)),
-    //         (Rc::from("b"), ParsedValue::LongVal(50)),
-    //     ]);
-    //
-    //     let pd1 = QlRow::from_parsed_message() ParsedData::new(hm);
-    //     let ret = eval_expr(
-    //         &expr,
-    //         &QlRowContext::from_row(Some(&pd1)),
-    //         &mut LazyContext::empty(),
-    //     )
-    //     .unwrap();
-    //     println!("RESULT: {:?}", ret);
-    // }
+        //println!("process_sql: {}", select_c.cols().len());
+        let group_by_exprs = Arc::new(get_group_by_exprs(&qry, &mut empty_lazy_context)?);
+        let order_by_exprs = Arc::new(get_order_by_exprs(&qry, &mut empty_lazy_context)?);
+        eval_query(
+            select_c,
+            where_c,
+            limit,
+            offset,
+            group_by_exprs,
+            order_by_exprs,
+            &mut in_table,
+            &mut out_table,
+        )?;
+        // match res {
+        //     Ok(r) => Ok(r),
+        //     Err(e) => Err(Box::new(e)),
+        // }
+        Ok(())
+    }
+
+    pub fn input_to_table_test(input: &'static str, schema: GrokSchema) -> QlMemTable {
+        let ql_schema = Arc::new(QlSchema::from(&schema));
+        let mut ret = QlMemTable::new(ql_schema.clone());
+        let mut lb = LinesBuffer::new(false);
+        lb.get_buf().put(input.as_bytes());
+        let parser = GrokParser::new(schema).unwrap();
+        for ln in lb.flush() {
+            if let Ok(parsed) = parser.parse(ln) {
+                ret.write_row(QlRow::from_parsed_message(parsed, ql_schema.as_ref()))
+                    .unwrap();
+            }
+        }
+        ret
+    }
 
     fn test_query(query: &str, input: &'static str) -> Result<Box<QlMemTable>, DynError> {
         let schema = test_syslog_schema();
-        let rdr: Box<dyn BufRead> = Box::new(BufReader::new(input.as_bytes()));
-        let pit = schema.create_parser_iterator(rdr, false)?;
-        let mut rrt = QlMemTable::new(Arc::new(QlSchema::from(&schema)));
-        let res = process_sql(&schema, pit, query, Box::new(&mut rrt));
+        let mut in_table = input_to_table_test(input, schema);
+        let mut rrt = QlMemTable::new(in_table.ql_schema().clone());
+        let res = process_sql_test(query, Box::new(&mut in_table), Box::new(&mut rrt));
         if res.is_ok() {
             for r in rrt.get_rows() {
                 println!("RESULT: {:?}", r)

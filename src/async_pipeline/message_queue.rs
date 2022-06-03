@@ -1,24 +1,18 @@
+use crate::DynError;
+use log::{debug, error};
 use std::error::Error;
 use std::fmt;
-use log::{debug, error};
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::task::JoinHandle;
-use crate::DynError;
 
 pub struct QueueJoinHandle {
     name: &'static str,
-    handle: JoinHandle<Result<(),DynError>>,
+    handle: JoinHandle<Result<(), DynError>>,
 }
 
 impl QueueJoinHandle {
-    pub fn new(
-        name: &'static str,
-        handle: JoinHandle<Result<(),DynError>>,
-    ) -> Self {
-        Self {
-            name,
-            handle,
-        }
+    pub fn new(name: &'static str, handle: JoinHandle<Result<(), DynError>>) -> Self {
+        Self { name, handle }
     }
 
     pub async fn join(self) -> () {
@@ -26,13 +20,19 @@ impl QueueJoinHandle {
         match handle.await {
             Ok(join_ok) => {
                 if let Err(err) = join_ok {
-                    error!("QueueJoinHandle({}) consumeing queue returned error {:?}", name, err)
+                    error!(
+                        "QueueJoinHandle({}) consumeing queue returned error {:?}",
+                        name, err
+                    )
                 } else {
                     debug!("QueueJoinHandle({}) completed with success", name)
                 }
             }
             Err(join_err) => {
-                error!("QueueJoinHandle({}) join returned error {:?}", name, join_err)
+                error!(
+                    "QueueJoinHandle({}) join returned error {:?}",
+                    name, join_err
+                )
             }
         };
     }
@@ -52,7 +52,6 @@ impl fmt::Display for QueueError {
     }
 }
 impl Error for QueueError {}
-
 
 pub type ChannelSender<T> = Sender<T>;
 pub type ChannelReceiver<T> = Receiver<T>;
@@ -101,17 +100,15 @@ pub trait MessageQueue<T> {
 
 #[cfg(test)]
 pub mod tests {
+    use crate::async_pipeline::message_queue::{ChannelReceiver, MessageSender, QueueMessage};
+    use crate::DynError;
     use log::info;
     use tokio::task::JoinHandle;
     use tokio_rayon::rayon::ThreadPoolBuilder;
-    use crate::async_pipeline::message_queue::{ChannelReceiver, MessageSender, QueueMessage};
-    use crate::DynError;
 
     pub fn init_test_rayon_pool() {
         // ignoring errors ...
-        let _ = ThreadPoolBuilder::new()
-            .num_threads(2)
-            .build_global();
+        let _ = ThreadPoolBuilder::new().num_threads(2).build_global();
     }
 
     pub struct TestMessageQueue<T> {
@@ -119,20 +116,39 @@ pub mod tests {
         pub received: usize,
         pub flushed: usize,
         pub shutdown: usize,
+        pub keep_buf: bool,
+        pub truncate_on_flush: bool,
+        pub buf: Vec<T>,
     }
 
     impl<T> TestMessageQueue<T>
-        where T: Send + Sync + 'static
+    where
+        T: Send + Sync + 'static,
     {
-        pub fn create(channel_size: usize) -> (MessageSender<T>, JoinHandle<Result<TestMessageQueue<T>,DynError>>) {
+        pub fn create(
+            channel_size: usize,
+            keep_buf: bool,
+            truncate_on_flush: bool,
+        ) -> (
+            MessageSender<T>,
+            JoinHandle<Result<TestMessageQueue<T>, DynError>>,
+        ) {
             let (tx, rx) = tokio::sync::mpsc::channel(channel_size);
-            let mq = Self { rx, received: 0, flushed: 0, shutdown: 0 };
+            let mq = Self {
+                rx,
+                received: 0,
+                flushed: 0,
+                shutdown: 0,
+                keep_buf,
+                truncate_on_flush,
+                buf: Vec::new(),
+            };
             let ret = MessageSender::new(tx);
             let jh = mq.consume_queue_async();
-            (ret,jh)
+            (ret, jh)
         }
 
-        pub fn consume_queue_async(mut self) -> JoinHandle<Result<TestMessageQueue<T>,DynError>> {
+        pub fn consume_queue_async(mut self) -> JoinHandle<Result<TestMessageQueue<T>, DynError>> {
             tokio::spawn(async move {
                 info!("Consuming test queue ...");
                 self.consume_queue().await;
@@ -144,11 +160,17 @@ pub mod tests {
         async fn consume_queue(&mut self) {
             while let Some(cmsg) = self.rx.recv().await {
                 match cmsg {
-                    QueueMessage::Data(_) => {
+                    QueueMessage::Data(d) => {
                         self.received += 1;
+                        if self.keep_buf {
+                            self.buf.push(d);
+                        }
                     }
                     QueueMessage::Flush => {
                         self.flushed += 1;
+                        if self.truncate_on_flush {
+                            self.buf.truncate(0);
+                        }
                     }
                     QueueMessage::Shutdown => {
                         self.shutdown += 1;

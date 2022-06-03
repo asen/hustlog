@@ -3,12 +3,10 @@
 extern crate grok;
 
 use std::collections::HashMap;
-use std::io::BufRead;
 use std::sync::Arc;
 
-use grok::{patterns, Grok, Pattern};
 use crate::DynError;
-use crate::parser::{LineMerger, SpaceLineMerger};
+use grok::{patterns, Grok, Pattern};
 
 use crate::parser::parser::*;
 use crate::parser::schema::{ParserColDef, ParserSchema};
@@ -34,13 +32,6 @@ impl GrokColumnDef {
             required,
         }
     }
-
-    // pub fn simple(col_type: ParsedValueType, lookup_name: String) -> GrokColumnDef {
-    //     Self {
-    //         col_type,
-    //         lookup_names: vec![lookup_name]
-    //     }
-    // }
 
     pub fn clone(&self) -> GrokColumnDef {
         GrokColumnDef {
@@ -87,26 +78,6 @@ impl GrokSchema {
 
     pub fn columns(&self) -> &Vec<GrokColumnDef> {
         &self.columns
-    }
-
-    pub fn create_parser_iterator(
-        &self,
-        rdr: Box<dyn BufRead>,
-        use_line_merger: bool,
-    ) -> Result<ParserIterator, DynError> {
-        let parser = GrokParser::new(self.clone())?;
-        let line_merger: Option<Box<dyn LineMerger>> = if use_line_merger {
-            Some(Box::new(SpaceLineMerger::new()))
-        } else {
-            None
-        };
-        let eror_processor = ParseErrorProcessor::new();
-        Ok(ParserIterator::new(
-            Box::new(parser),
-            line_merger,
-            Box::new(rdr.lines().into_iter()),
-            eror_processor,
-        ))
     }
 }
 
@@ -175,10 +146,13 @@ impl LogParser for GrokParser {
                 }
                 if c.required && !found {
                     return Err(LogParseError::from_string(
-                        format!("Required field not found: {} RAW: {}",
-                                c.pcd.name(),
-                                msg.as_str()),
-                        msg));
+                        format!(
+                            "Required field not found: {} RAW: {}",
+                            c.pcd.name(),
+                            msg.as_str()
+                        ),
+                        msg,
+                    ));
                 }
             }
             Ok(ParsedMessage::new(msg, ParsedData::new(hm)))
@@ -187,7 +161,6 @@ impl LogParser for GrokParser {
         }
     }
 }
-
 
 #[cfg(test)]
 pub mod tests {
@@ -259,15 +232,16 @@ pub mod tests {
                 ),
             ],
             grok_with_alias_only: false,
-            extra_patterns: vec![("DUMMY".to_string(),"%{NUMBER:num} +%{GREEDYDATA:message}".to_string())],
+            extra_patterns: vec![(
+                "DUMMY".to_string(),
+                "%{NUMBER:num} +%{GREEDYDATA:message}".to_string(),
+            )],
         }
     }
 
     pub fn test_dummy_data(num_lines: usize) -> String {
         (0..num_lines)
-            .map( |i| {
-                format!("{} line number {}\n", i, i)}
-            )
+            .map(|i| format!("{} line number {}\n", i, i))
             .collect::<Vec<_>>()
             .join("")
     }

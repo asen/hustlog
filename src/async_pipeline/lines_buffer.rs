@@ -1,12 +1,12 @@
-use bytes::{Buf, BytesMut};
 use crate::parser::{LineMerger, RawMessage, SpaceLineMerger};
 use bstr::ByteSlice;
+use bytes::{Buf, BytesMut};
 
 const LINE_ENDING_CHARS: [u8; 2] = ['\n' as u8, '\r' as u8];
 
 const DECIMAL_DIGIT_CHARS: [u8; 10] = [
-    '0' as u8, '1' as u8, '2' as u8, '3' as u8, '4' as u8,
-    '5' as u8, '6' as u8, '7' as u8, '8' as u8, '9' as u8,
+    '0' as u8, '1' as u8, '2' as u8, '3' as u8, '4' as u8, '5' as u8, '6' as u8, '7' as u8,
+    '8' as u8, '9' as u8,
 ];
 
 const SYSLOG_PRI_OPEN_TAG: u8 = '<' as u8;
@@ -20,7 +20,7 @@ pub struct LinesBuffer {
 impl LinesBuffer {
     pub fn new(
         //capacity: usize,
-        use_line_merger: bool
+        use_line_merger: bool,
     ) -> Self {
         let line_merger = if use_line_merger {
             Some(SpaceLineMerger::new())
@@ -53,7 +53,7 @@ impl LinesBuffer {
 
     fn drop_syslog_priority(&mut self) {
         let first_c = self.buf.first();
-        if let Some(&SYSLOG_PRI_OPEN_TAG) = first_c  {
+        if let Some(&SYSLOG_PRI_OPEN_TAG) = first_c {
             let mut iter = self.buf.iter();
             let mut to_advance = 1;
             let _fc = iter.next().unwrap(); // skip the '<'
@@ -158,8 +158,8 @@ impl LinesBuffer {
 
 #[cfg(test)]
 mod tests {
-    use bytes::{BufMut, BytesMut};
     use crate::async_pipeline::LinesBuffer;
+    use bytes::{BufMut, BytesMut};
 
     const TEST_TEXT: &'static str = r#"<191>May 25 00:30:05 actek-mac syslogd[106]: Configuration Notice:
 	ASL Module "com.apple.authd" claims selected messages.
@@ -201,7 +201,6 @@ mod tests {
         }
     }
 
-
     #[test]
     fn test_line_buffer_with_lm1() {
         let mut lb = LinesBuffer::new(true);
@@ -231,7 +230,6 @@ mod tests {
         //     println!("LINE: {}", ln.as_str())
         // }
     }
-
 
     #[test]
     fn test_line_buffer_no_lm1() {
@@ -282,5 +280,4 @@ mod tests {
         //     println!("LINE: {}", ln.as_str())
         // }
     }
-
 }

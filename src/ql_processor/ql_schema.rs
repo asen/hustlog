@@ -1,12 +1,12 @@
+use crate::parser::{
+    GrokColumnDef, GrokSchema, ParsedMessage, ParsedValue, ParsedValueType, ParserColDef,
+    ParserSchema, RawMessage,
+};
 use crate::ql_processor::ql_agg_expr::{get_agg_expr, AggExpr, DynAggExpr};
 use crate::ql_processor::ql_eval_expr::{
     eval_expr_type, object_name_to_string, LazyContext, LazyExpr,
 };
 use crate::ql_processor::SqlSelectQuery;
-use crate::parser::{
-    GrokColumnDef, GrokSchema, ParsedMessage, ParsedValue, ParsedValueType, ParserColDef,
-    ParserSchema, RawMessage,
-};
 use sqlparser::ast::{BinaryOperator, Expr, SelectItem};
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
@@ -369,7 +369,7 @@ fn get_res_col(name: &str, expr: &Expr) -> (Arc<str>, QlSelectItem) {
     }
 }
 
-pub fn get_res_cols(_schema: &GrokSchema, qry: &SqlSelectQuery) -> Vec<QlSelectItem> {
+pub fn get_res_cols(qry: &SqlSelectQuery) -> Vec<QlSelectItem> {
     let selection: &Vec<SelectItem> = &qry.get_select().projection;
     selection
         .iter()

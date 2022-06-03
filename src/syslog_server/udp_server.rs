@@ -1,15 +1,17 @@
 use crate::async_pipeline::lines_buffer::LinesBuffer;
-use crate::async_pipeline::message_queue::{ChannelReceiver, ChannelSender, MessageSender, QueueMessage};
+use crate::async_pipeline::message_queue::{
+    ChannelReceiver, ChannelSender, MessageSender, QueueMessage,
+};
+use crate::parser::RawMessage;
 use crate::{DynError, HustlogConfig};
 use bytes::BufMut;
-use log::{debug, error, info, Level, log_enabled, trace};
+use log::{debug, error, info, log_enabled, trace, Level};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::net::UdpSocket;
 use tokio::signal;
 use tokio::time::interval;
-use crate::parser::RawMessage;
 
 fn system_time_now() -> u64 {
     SystemTime::now()
@@ -197,13 +199,12 @@ impl UdpServerState {
             &host_port, hcrc
         );
         let mut buf = vec![0; 64 * 1024]; //max UDP packet is 64K
-        let server_state =
-            UdpServerState::new(
-                raw_sender,
-                hcrc.get_idle_timeout(),
-                hcrc.merge_multi_line(),
-                hcrc.get_async_channel_size(),
-            );
+        let server_state = UdpServerState::new(
+            raw_sender,
+            hcrc.get_idle_timeout(),
+            hcrc.merge_multi_line(),
+            hcrc.get_async_channel_size(),
+        );
         let udp_data_sender = server_state.clone_sender();
         server_state.consume_udp_data_queue_async();
 

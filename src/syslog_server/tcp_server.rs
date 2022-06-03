@@ -1,5 +1,6 @@
 use crate::async_pipeline::lines_buffer::LinesBuffer;
 use crate::async_pipeline::message_queue::MessageSender;
+use crate::parser::RawMessage;
 use crate::{DynError, HustlogConfig};
 use log::{debug, error, info, log_enabled, trace, Level};
 use std::error::Error;
@@ -10,7 +11,6 @@ use tokio::io::AsyncReadExt;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::signal;
 use tokio::time::interval;
-use crate::parser::RawMessage;
 
 #[derive(Debug)]
 pub struct ConnectionError {
@@ -101,7 +101,11 @@ impl TcpServerConnection {
                 break;
             }
             if log_enabled!(Level::Trace) {
-                trace!("RECEIVED MESSAGES BATCH: ({}) first={:?}", batch.len(), batch.first())
+                trace!(
+                    "RECEIVED MESSAGES BATCH: ({}) first={:?}",
+                    batch.len(),
+                    batch.first()
+                )
             }
             self.raw_sender.send(batch).await?
         }

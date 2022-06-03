@@ -143,7 +143,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_batching_queue1() {
-        let (test_queue_sender, test_queue_jh) = TestMessageQueue::create(2);
+        let (test_queue_sender, test_queue_jh) = TestMessageQueue::create(2, false, false);
         let (sender, bjh) = BatchingQueue::wrap_output(10, 2, test_queue_sender);
         let mut lb = LinesBuffer::new(false);
         lb.get_buf().put(test_dummy_data(99).as_bytes());

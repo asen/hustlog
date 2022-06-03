@@ -1,9 +1,6 @@
-use std::fs;
-use std::io::{self, BufWriter};
-
 use crate::conf::external::ExternalConfig;
+use crate::DynError;
 use clap::Parser;
-use crate::{DynBoxWrite, DynError};
 
 #[derive(Parser, Debug)]
 #[clap(name = "hustlog")]
@@ -95,12 +92,6 @@ pub struct MyArgs {
     /// Default is 1000
     #[clap(long)]
     pub async_channel_size: Option<usize>,
-
-    /// Potentially temporary option - to test sync (single-threaded) vs async file I/O performance
-    /// set to true to use the async pipeline, may change the default too (currently default is false).
-    #[clap(long)]
-    pub async_file_processing: Option<bool>,
-
 }
 
 impl MyArgs {
@@ -113,19 +104,19 @@ impl MyArgs {
         }
     }
 
-    pub fn get_outp(&self) -> Result<DynBoxWrite, DynError> {
-        let writer: DynBoxWrite = match &self.output {
-            None => Box::new(BufWriter::new(io::stdout())),
-            Some(filename) => {
-                if filename == "-" {
-                    Box::new(BufWriter::new(io::stdout()))
-                } else {
-                    Box::new(BufWriter::new(fs::File::create(filename)?))
-                }
-            }
-        };
-        Ok(writer)
-    }
+    // pub fn get_outp(&self) -> Result<DynBoxWrite, DynError> {
+    //     let writer: DynBoxWrite = match &self.output {
+    //         None => Box::new(BufWriter::new(io::stdout())),
+    //         Some(filename) => {
+    //             if filename == "-" {
+    //                 Box::new(BufWriter::new(io::stdout()))
+    //             } else {
+    //                 Box::new(BufWriter::new(fs::File::create(filename)?))
+    //             }
+    //         }
+    //     };
+    //     Ok(writer)
+    // }
 
     pub fn grok_list_default_patterns(&self) -> bool {
         self.grok_list_default_patterns

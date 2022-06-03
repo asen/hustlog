@@ -1,7 +1,7 @@
-use crate::ql_processor::QlRow;
-use std::io::Write;
-use crate::{DynBoxWrite, DynError};
 use crate::parser::{DynParserSchema, ParsedValue};
+use crate::ql_processor::QlRow;
+use crate::{DynBoxWrite, DynError};
+use std::io::Write;
 
 fn output_value_for_sql(pv: &ParsedValue, outp: &mut DynBoxWrite) -> Result<(), DynError> {
     match pv {
@@ -117,17 +117,18 @@ impl BatchedInserts {
 
 #[cfg(test)]
 mod tests {
+    use crate::parser::{test_syslog_schema, DynParserSchema};
+    use crate::ql_processor::tests::input_to_table_test;
+    use crate::ql_processor::{QlInputTable, QlSchema};
     use crate::sqlgen::sql_create::SqlCreateSchema;
     use crate::sqlgen::BatchedInserts;
-    use std::io;
-    use std::io::{BufRead, BufReader, BufWriter, Write};
-    use std::sync::Arc;
-    use log::info;
     use crate::{DynBoxWrite, DynError};
-    use crate::parser::{DynParserSchema, test_syslog_schema};
-    use crate::ql_processor::{ParserIteratorInputTable, QlInputTable, QlSchema};
+    use log::info;
+    use std::io;
+    use std::io::{BufWriter, Write};
+    use std::sync::Arc;
 
-    pub fn ql_table_to_sql(
+    fn ql_table_to_sql_test(
         inp: &mut Box<dyn QlInputTable>,
         outp: DynBoxWrite,
         batch_size: usize,
@@ -146,12 +147,7 @@ mod tests {
         Apr 22 04:42:04 actek-mac syslogd[103]: ASL Sender Statistics\n\
         Apr 22 04:43:04 actek-mac syslogd[104]: ASL Sender Statistics\n\
         Apr 22 04:43:34 actek-mac syslogd[104]: ASL Sender Statistics\n\
-        Apr 22 04:48:50 actek-mac login[49531]: USER_PROCESS: 49532 ttys000\n\
-        ";
-
-    // fn get_logger() -> Box<dyn Write> {
-    //     Box::new(BufWriter::new(std::io::stderr()))
-    // }
+        Apr 22 04:48:50 actek-mac login[49531]: USER_PROCESS: 49532 ttys000\n";
 
     pub struct DummyWrite {
         pub written: usize,
@@ -177,7 +173,10 @@ mod tests {
 
         fn flush(&mut self) -> io::Result<()> {
             self.flushed += 1;
-            info!("DummyWrite: flushed: {} written: {}", self.flushed, self.written);
+            info!(
+                "DummyWrite: flushed: {} written: {}",
+                self.flushed, self.written
+            );
             Ok(())
         }
     }
@@ -195,12 +194,8 @@ mod tests {
         let mut out = get_dummy_outp();
         out.write(s.as_bytes()).unwrap();
         out.write("\n".as_bytes()).unwrap();
-        let rdr: Box<dyn BufRead> = Box::new(BufReader::new(LINES1.as_bytes()));
-        let pit = schema
-            .create_parser_iterator(rdr, false)
-            .unwrap();
-        let itbl = ParserIteratorInputTable::new(pit, ql_schema);
+        let itbl = input_to_table_test(LINES1, schema);
         let mut itbl_box = Box::new(itbl) as Box<dyn QlInputTable>;
-        ql_table_to_sql(&mut itbl_box, out, 2).unwrap();
+        ql_table_to_sql_test(&mut itbl_box, out, 2).unwrap();
     }
 }

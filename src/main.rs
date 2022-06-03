@@ -2,42 +2,44 @@
 
 use clap::Parser;
 
-use conf::*;
-use crate::file_processor::{file_process_main, main_print_default_patterns, st_main};
+use crate::file_processor::file_process_main;
+use crate::parser::GrokParser;
 use crate::syslog_server::server_main;
+use conf::*;
 
+mod async_pipeline;
 mod conf;
+mod file_processor;
 mod output;
 mod parser;
 mod ql_processor;
 mod sqlgen;
 mod syslog_server;
-mod async_pipeline;
-mod file_processor;
 
-
-fn tokio_server_main(hc: HustlogConfig) -> Result<(),DynError> {
+fn tokio_server_main(hc: HustlogConfig) -> Result<(), DynError> {
     // let mut rt = tokio::runtime::Runtime::new().unwrap();
     let rt = tokio::runtime::Runtime::new().unwrap();
-    rt.block_on(async {
-        server_main(hc).await
-    })
+    rt.block_on(async { server_main(hc).await })
 }
 
-fn tokio_file_process_main(hc: HustlogConfig) -> Result<(),DynError> {
+fn tokio_file_process_main(hc: HustlogConfig) -> Result<(), DynError> {
     // let mut rt = tokio::runtime::Runtime::new().unwrap();
     let rt = tokio::runtime::Runtime::new().unwrap();
-    rt.block_on(async {
-        file_process_main(hc).await
-    })
+    rt.block_on(async { file_process_main(hc).await })
+}
+
+fn main_print_default_patterns() -> Result<(), DynError> {
+    for (p, s) in GrokParser::default_patterns() {
+        println!("{} {}", p, s);
+    }
+    return Ok(());
 }
 
 fn main() -> Result<(), DynError> {
     let args: MyArgs = MyArgs::parse();
     //println!("ARGS: {:?}", args);
     if args.grok_list_default_patterns() {
-        let outp: DynBoxWrite = args.get_outp()?;
-        return main_print_default_patterns(outp);
+        return main_print_default_patterns();
     }
     // no conf/schema before this point, no args after it.
     let conf = HustlogConfig::new(args)?;
@@ -47,10 +49,7 @@ fn main() -> Result<(), DynError> {
     if is_syslog_server {
         return tokio_server_main(conf);
     }
-    if conf.async_file_processing() {
-        return tokio_file_process_main(conf);
-    }
-    st_main(conf)
+    tokio_file_process_main(conf)
 }
 
 #[test]
