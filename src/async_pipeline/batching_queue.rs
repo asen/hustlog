@@ -44,7 +44,7 @@ impl BatchingQueue {
 
     fn batch_messages(&mut self, mut rm: Vec<RawMessage>) -> Option<Vec<Vec<RawMessage>>> {
         self.buf.append(&mut rm);
-        if self.buf.len() >= self.batch_size {
+        if (self.batch_size > 0) && (self.buf.len() >= self.batch_size) {
             let reminder = if self.buf.len() % self.batch_size == 0 {
                 0
             } else {
@@ -157,6 +157,26 @@ mod tests {
         let test_queue = test_queue_res.unwrap();
         assert_eq!(test_queue.received, 10);
         assert_eq!(test_queue.flushed, 1);
+        assert_eq!(test_queue.shutdown, 1);
+    }
+
+    #[tokio::test]
+    async fn test_batching_queue_zero_batch_size2() {
+        let (test_queue_sender, test_queue_jh) = TestMessageQueue::create(2, true, false);
+        let (sender, bjh) = BatchingQueue::wrap_output(0, 2, test_queue_sender);
+        let mut lb = LinesBuffer::new(false);
+        lb.get_buf().put(test_dummy_data(99).as_bytes());
+        let raw_vec = lb.flush();
+        sender.send(raw_vec).await.unwrap();
+        sender.flush().await.unwrap();
+        sender.flush().await.unwrap(); // buf should be empty so this flush should do nothing other than increase flushed
+        sender.shutdown().await.unwrap();
+        bjh.join().await;
+        let test_queue_res = test_queue_jh.await.unwrap();
+        let test_queue = test_queue_res.unwrap();
+        assert_eq!(test_queue.buf[0].len(), 99);
+        assert_eq!(test_queue.received, 1);
+        assert_eq!(test_queue.flushed, 2);
         assert_eq!(test_queue.shutdown, 1);
     }
 }

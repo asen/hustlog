@@ -5,12 +5,11 @@ This is my (work-in-progress) tool to mess with logs.
 What it has for now: 
 
 - log parser based on regular expressions and the [grok](https://crates.io/crates/grok) crate
-- (partially supported/WIP) SQL interface to transform the parsed data
-(query parsing is using the [sqlparser](https://crates.io/crates/sqlparser) crate)
 - input from file/stdin for one-shot processing
 - tokio based TCP and UDP syslog servers to continuously accept and process logs
+- separate (rayon based) thread pool for parsing and SQL execution
 - in-memory batching for more efficient downstream processing
-- apply SQL query transformations/filtering on the batches
+- apply SQL query -based transformations/filtering on the batches
 - output to file/stdout in CSV or SQL DDL (inserts) format
 - (TODO) live database output
 
@@ -39,7 +38,7 @@ Example usage:
 
 Using SQL:
 
-    /target/debug/hustlog  -i /var/log/system.log -g SYSLOGLINE \
+    ./target/debug/hustlog  -i /var/log/system.log -g SYSLOGLINE \
         -s "+timestamp:ts:%b %e %H:%M:%S" -s +message -m \
         -q 'select * from SYSLOGLINE where message="ASL Sender Statistics" limit 3 offset 1;'
     2022-04-27 00:25:39 +02:00,ASL Sender Statistics
