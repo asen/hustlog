@@ -79,9 +79,12 @@ pub struct MyArgs {
     #[clap(short, long)]
     pub query: Option<String>,
 
+    /// Internal boolean grok library setting: TODO: explain what it does
     #[clap(long)]
     pub grok_with_alias_only: bool,
 
+    /// Do not load the default patterns bundled with the grok crate
+    /// (these are loaded by default)
     #[clap(long)]
     pub grok_ignore_default_patterns: bool,
 
@@ -89,7 +92,7 @@ pub struct MyArgs {
     /// At least one column def is required
     /// A column def is a string starting with an optional "+" (indicating that the
     /// field is mandatory) followed by the column (grok lookup) name and then a column (":")
-    /// followed by the type: \[+\]<column_name>\[:type_spec\]
+    /// followed by the type: [+]<column_name>[:type_spec]
     ///
     /// Type spec can be one of:
     ///   - str (default, can be omitted)
