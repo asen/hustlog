@@ -1,14 +1,15 @@
 
-input: /var/log/system.log
+# input: /var/log/system.log
+input: /var/log/syslog
 merge_multi_line: true
 
 grok_pattern: SYSLOGLINE
 grok_schema_columns:
   - "+timestamp:ts:%b %e %H:%M:%S"
-  - logsource
-  - program
+  - "logsource:str:50"
+  - "program::100"
   - "pid:int"
-  - "+message"
+  - "+message::65536"
 # grok_patterns_file: Option<String>
 grok_with_alias_only: false
 grok_ignore_default_patterns: false

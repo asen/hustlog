@@ -23,6 +23,12 @@ What it has for now:
 
 * parse a log file and output (batched) SQL insert statements
 
+Example to load your Ubuntu/Debian /var/log/syslog file into a database named logs_db:
+
+    hustlog -c config_examples/syslog.yml -f sql --output-add-ddl | \
+        mysql -u... ... logs_db
+
+(Add -i /var/log/system.log to use that on MacOS)
 
 ### Examples
 

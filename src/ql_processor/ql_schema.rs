@@ -22,6 +22,10 @@ impl QueryError {
         QueryError(s.to_string())
     }
 
+    // pub fn from(s: String) -> QueryError {
+    //     QueryError(s)
+    // }
+
     pub fn not_supported(what: &str) -> QueryError {
         QueryError(format!("Feature not supported {}", what))
     }
@@ -324,7 +328,7 @@ impl QlSelectCols {
             .iter()
             .map(|cd| {
                 let nt = match cd {
-                    QlSelectItem::RawMessage => ("_raw", Ok(ParsedValueType::StrType)),
+                    QlSelectItem::RawMessage => ("_raw", Ok(ParsedValueType::StrType(65536))),
                     QlSelectItem::LazyExpr(x) => {
                         (x.name().as_ref(), eval_expr_type(x.expr(), &ctx))
                     }

@@ -503,7 +503,7 @@ pub fn eval_expr_type(
     match expr {
         Expr::Identifier(x) => {
             if x.quote_style.is_some() || ctx.is_empty() {
-                Ok(ParsedValueType::StrType)
+                Ok(ParsedValueType::StrType(x.value.len()))
             } else {
                 let s = x.value.as_str();
                 if let Some(val) = ctx.get(s) {
@@ -527,6 +527,12 @@ pub fn eval_expr_type(
         Expr::BinaryOp { left, op, right } => {
             let lval = eval_expr_type(left, ctx)?;
             let rval = eval_expr_type(right, ctx)?;
+            // let incompatible_types = |op| {
+            //     QueryError::from(format!(
+            //         "Incompatible types for binary op {}: left - {:?}, right - {:?}",
+            //         op, &lval, &rval
+            //     ))
+            // };
             let arithmetic_op_type = |_op| {
                 if lval == ParsedValueType::DoubleType || rval == ParsedValueType::DoubleType {
                     Ok(ParsedValueType::DoubleType)
@@ -540,7 +546,17 @@ pub fn eval_expr_type(
                 BinaryOperator::Multiply => arithmetic_op_type(&op),
                 BinaryOperator::Divide => arithmetic_op_type(&op),
                 BinaryOperator::Modulo => arithmetic_op_type(&op),
-                BinaryOperator::StringConcat => Ok(ParsedValueType::StrType),
+                BinaryOperator::StringConcat => {
+                    if let ParsedValueType::StrType(ln) = lval {
+                        if let ParsedValueType::StrType(rn) = rval {
+                            Ok(ParsedValueType::StrType(ln + rn))
+                        } else {
+                            Ok(ParsedValueType::StrType(ln + 30))
+                        }
+                    } else {
+                        Ok(ParsedValueType::StrType(60))
+                    }
+                }
                 BinaryOperator::Gt => Ok(ParsedValueType::BoolType),
                 BinaryOperator::Lt => Ok(ParsedValueType::BoolType),
                 BinaryOperator::GtEq => Ok(ParsedValueType::BoolType),
@@ -628,15 +644,15 @@ pub fn eval_expr_type(
                     }
                 }
                 //Value::Number(x, _) => {}
-                Value::SingleQuotedString(_x) => {
+                Value::SingleQuotedString(x) => {
                     // let s: &String = x;
-                    Ok(ParsedValueType::StrType)
+                    Ok(ParsedValueType::StrType(x.len()))
                 }
                 Value::NationalStringLiteral(_) => {
                     Err(QueryError::not_impl("Value::NationalStringLiteral"))
                 }
                 Value::HexStringLiteral(_) => Err(QueryError::not_impl("Value::HexStringLiteral")),
-                Value::DoubleQuotedString(_x) => Ok(ParsedValueType::StrType),
+                Value::DoubleQuotedString(x) => Ok(ParsedValueType::StrType(x.len())),
                 Value::Boolean(_b) => Ok(ParsedValueType::BoolType),
                 Value::Interval { .. } => Err(QueryError::not_impl("Value::Interval")),
                 Value::Null => Ok(ParsedValueType::NullType),

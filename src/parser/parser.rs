@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 use chrono::Datelike;
 use chrono::{DateTime, FixedOffset, Local, NaiveDateTime, Offset, TimeZone};
+use log::warn;
 
 #[derive(Debug, Clone)]
 pub struct RawMessage(String);
@@ -267,7 +268,7 @@ pub enum ParsedValueType {
     LongType,
     DoubleType,
     TimeType(TimeTypeFormat), // format specifier
-    StrType,
+    StrType(usize),           // max len
 }
 
 fn parse_ts(s: &str, fmt: &TimeTypeFormat) -> Option<DateTime<FixedOffset>> {
@@ -297,7 +298,14 @@ fn parse_ts(s: &str, fmt: &TimeTypeFormat) -> Option<DateTime<FixedOffset>> {
 
 pub fn str2val(s: &str, ctype: &ParsedValueType) -> Option<Arc<ParsedValue>> {
     let pv_opt = match ctype {
-        ParsedValueType::StrType => Some(ParsedValue::StrVal(Arc::new(String::from(s)))),
+        ParsedValueType::StrType(max_len) => {
+            if s.len() <= *max_len {
+                Some(ParsedValue::StrVal(Arc::new(String::from(s))))
+            } else {
+                warn!("StrVal len {} exceeding max_len {}", s.len(), max_len);
+                None
+            }
+        }
         ParsedValueType::LongType => s.parse::<i64>().ok().map(|v| ParsedValue::LongVal(v)),
         ParsedValueType::DoubleType => s.parse::<f64>().ok().map(|v| ParsedValue::DoubleVal(v)),
         ParsedValueType::TimeType(fmt) => parse_ts(s, fmt).map(|v| ParsedValue::TimeVal(v)),
@@ -316,22 +324,28 @@ pub fn str2val(s: &str, ctype: &ParsedValueType) -> Option<Arc<ParsedValue>> {
 }
 
 pub fn str2type(s: &str) -> Option<ParsedValueType> {
-    match s {
-        "str" | "" => Some(ParsedValueType::StrType),
+    let split = s.splitn(2, ":").collect::<Vec<&str>>();
+    match split[0] {
+        "str" | "" => {
+            let on = if split.len() > 1 {
+                split[1].parse::<usize>().ok()
+            } else {
+                Some(256)
+            };
+            on.map(|n| ParsedValueType::StrType(n))
+        }
         "int" | "long" => Some(ParsedValueType::LongType),
         "float" | "double" => Some(ParsedValueType::DoubleType),
         "bool" => Some(ParsedValueType::BoolType),
         "null" => Some(ParsedValueType::NullType),
-        x => {
-            let ts_prefix = "ts:";
-            if x.starts_with(ts_prefix) {
-                Some(ParsedValueType::TimeType(TimeTypeFormat::new(
-                    x.strip_prefix(ts_prefix).unwrap(),
-                )))
-            } else {
+        "ts" => {
+            if split.len() < 2 {
                 None
+            } else {
+                Some(ParsedValueType::TimeType(TimeTypeFormat::new(split[1])))
             }
         }
+        _ => None,
     }
 }
 
@@ -414,7 +428,9 @@ mod tests {
             )
         );
         assert_eq!(
-            str2val("blah", &ParsedValueType::StrType).unwrap().as_ref(),
+            str2val("blah", &ParsedValueType::StrType(65536))
+                .unwrap()
+                .as_ref(),
             &ParsedValue::StrVal(Arc::new(String::from("blah")))
         );
     }

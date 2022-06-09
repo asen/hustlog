@@ -25,17 +25,23 @@ impl SqlCreateCol {
     fn from_parser_col_def(pcd: &ParserColDef) -> SqlCreateCol {
         let sql_type = match pcd.pv_type() {
             ParsedValueType::NullType => {
-                "NULL" // this shouldn't happen?
+                Arc::from("NULL") // this shouldn't happen?
             }
-            ParsedValueType::BoolType => "BOOLEAN",
-            ParsedValueType::LongType => "BIGINT",
-            ParsedValueType::DoubleType => "DOUBLE",
-            ParsedValueType::TimeType(_) => "TIMESTAMP",
-            ParsedValueType::StrType => "VARCHAR",
+            ParsedValueType::BoolType => Arc::from("BOOLEAN"),
+            ParsedValueType::LongType => Arc::from("BIGINT"),
+            ParsedValueType::DoubleType => Arc::from("DOUBLE"),
+            ParsedValueType::TimeType(_) => Arc::from("TIMESTAMP"),
+            ParsedValueType::StrType(n) => {
+                if *n < 16384 {
+                    Arc::from(format!("VARCHAR({})", n).as_str())
+                } else {
+                    Arc::from("TEXT")
+                }
+            },
         };
         Self {
             name: pcd.name().clone(),
-            sql_type: Arc::from(sql_type),
+            sql_type: sql_type,
             extra_spec: Arc::from(""),
         }
     }
@@ -77,24 +83,10 @@ impl SqlCreateSchema {
         Self {
             table_name: Arc::from(schema.name()),
             col_defs,
-            pre_name_opts: Arc::from(""),
-            table_opts: Arc::from(""),
+            pre_name_opts: Arc::from("IF NOT EXISTS"), //TODO
+            table_opts: Arc::from(""), // TODO
         }
     }
-
-    // pub fn from_grok_schema(schema: &GrokSchema) -> Self {
-    //     let col_defs = schema
-    //         .col_defs()
-    //         .iter()
-    //         .map(|&x| SqlCreateCol::from_parser_col_def(x))
-    //         .collect();
-    //     Self {
-    //         table_name: Rc::from(schema.name()),
-    //         col_defs,
-    //         pre_name_opts: Rc::from(""),
-    //         table_opts: Rc::from(""),
-    //     }
-    // }
 
     pub fn get_create_sql(&self) -> String {
         let col_defs_str = self
@@ -106,10 +98,10 @@ impl SqlCreateSchema {
 
         [
             "CREATE TABLE ",
-            &self.table_name,
-            " ",
             &self.pre_name_opts,
-            "(\n",
+            " ",
+            &self.table_name,
+            " (\n",
             &col_defs_str,
             ") ",
             &self.table_opts,

@@ -179,19 +179,19 @@ pub mod tests {
                 ),
                 GrokColumnDef::new(
                     Arc::from("message"),
-                    ParsedValueType::StrType,
+                    ParsedValueType::StrType(65535),
                     vec![Arc::new(String::from("message"))],
                     true,
                 ),
                 GrokColumnDef::new(
                     Arc::from("logsource"),
-                    ParsedValueType::StrType,
+                    ParsedValueType::StrType(256),
                     vec![Arc::new(String::from("logsource"))],
                     true,
                 ),
                 GrokColumnDef::new(
                     Arc::from("program"),
-                    ParsedValueType::StrType,
+                    ParsedValueType::StrType(256),
                     vec![Arc::new(String::from("program"))],
                     true,
                 ),
@@ -226,7 +226,7 @@ pub mod tests {
                 ),
                 GrokColumnDef::new(
                     Arc::from("message"),
-                    ParsedValueType::StrType,
+                    ParsedValueType::StrType(65535),
                     vec![Arc::new(String::from("message"))],
                     true,
                 ),
@@ -260,7 +260,7 @@ pub mod tests {
                 ),
                 GrokColumnDef::new(
                     Arc::from("msg"),
-                    ParsedValueType::StrType,
+                    ParsedValueType::StrType(65536),
                     vec![Arc::new(String::from("msg"))],
                     true,
                 ),

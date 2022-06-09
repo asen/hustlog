@@ -3,6 +3,8 @@ use crate::ql_processor::QlRow;
 use crate::{DynBoxWrite, DynError};
 use std::io::Write;
 
+const SQL_TIME_FORMAT: &str = "%Y-%m-%d %H:%M:%S";
+
 fn output_value_for_sql(pv: &ParsedValue, outp: &mut DynBoxWrite) -> Result<(), DynError> {
     match pv {
         ParsedValue::NullVal => {
@@ -23,7 +25,7 @@ fn output_value_for_sql(pv: &ParsedValue, outp: &mut DynBoxWrite) -> Result<(), 
         }
         ParsedValue::TimeVal(t) => {
             outp.write("'".as_bytes())?;
-            outp.write(t.to_string().as_bytes())?;
+            outp.write(t.format(SQL_TIME_FORMAT).to_string().as_bytes())?;
             outp.write("'".as_bytes())?;
         }
         ParsedValue::StrVal(s) => {

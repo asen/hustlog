@@ -51,9 +51,6 @@ pub async fn create_processing_pipeline(
             )))
         }
     };
-    if hcrc.output_add_ddl() {
-        sink.lock().await.output_header()?;
-    }
     let mut join_handles = Vec::new();
     let (mut output_sender, jh) =
         OutputProcessor::wrap_sink(sink, hcrc.get_async_channel_size(), hcrc.output_add_ddl());
