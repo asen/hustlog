@@ -12,7 +12,11 @@ for i in $(seq 1 $NUM_LINES) ; do
     hits_this_sec=0
   fi
   let hits_this_sec=$hits_this_sec+1
-  my_ts=`date -r $now "+%Y-%m-%dT%H:%M:%S"` # TODO MacOS/BSD -specific?
+  if [ "$(uname)" == "Darwin" ]; then
+    my_ts=`date -r $now "+%Y-%m-%dT%H:%M:%S"`
+  else
+    my_ts=`date -d @$now "+%Y-%m-%dT%H:%M:%S"`
+  fi
   echo "$my_ts $i dummy line $i ($now)"
 done
 
