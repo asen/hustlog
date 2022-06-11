@@ -1,4 +1,4 @@
-use crate::output::format::OutputSink;
+use crate::output::output_sink::OutputSink;
 use crate::ql_processor::{QlRow, QlSchema};
 use crate::sqlgen::{BatchedInserts, SqlCreateSchema};
 use crate::{DynBoxWrite, DynError};
@@ -20,6 +20,10 @@ impl AnsiSqlOutput {
         let inserts = BatchedInserts::new(schema, batch_size, outp);
         Self { ddl, inserts }
     }
+
+    fn output_row(&mut self, row: QlRow) -> Result<(), DynError> {
+        self.inserts.add_to_batch(row)
+    }
 }
 
 impl OutputSink for AnsiSqlOutput {
@@ -33,11 +37,19 @@ impl OutputSink for AnsiSqlOutput {
         Ok(())
     }
 
-    fn output_row(&mut self, row: QlRow) -> Result<(), DynError> {
-        self.inserts.add_to_batch(row)
-    }
 
     fn flush(&mut self) -> Result<(), DynError> {
         self.inserts.flush()
+    }
+
+    fn output_batch(&mut self, batch: Vec<QlRow>) -> Result<(), DynError> {
+        for r in batch {
+            self.output_row(r)?
+        }
+        Ok(())
+    }
+
+    fn shutdown(&mut self) -> Result<(), DynError> {
+        Ok(())
     }
 }

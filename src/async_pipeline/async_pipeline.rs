@@ -3,7 +3,7 @@ use crate::async_pipeline::batching_queue::BatchingQueue;
 use crate::async_pipeline::message_queue::{MessageSender, QueueJoinHandle};
 use crate::async_pipeline::output_processor::{DynOutputSink, OutputProcessor};
 use crate::async_pipeline::sql_batch_processor::SqlBatchProcessor;
-use crate::output::{AnsiSqlOutput, CsvOutput};
+use crate::output::{AnsiSqlOutput, CsvOutput, OdbcSink};
 use crate::parser::RawMessage;
 use crate::ql_processor::QlSchema;
 use crate::{DynError, HustlogConfig, OutputFormat};
@@ -31,13 +31,12 @@ pub async fn create_processing_pipeline(
     } else {
         ql_input_schema.clone()
     };
-    let outp_wr = hcrc.get_outp()?;
     let sink: DynOutputSink = match hcrc.output_format() {
         OutputFormat::DEFAULT => {
             debug!("Using default (CSV) output");
             Arc::new(Mutex::new(CsvOutput::new(
                 ql_output_schema.clone(),
-                outp_wr,
+                hcrc.get_output_writer()?,
                 hcrc.output_add_ddl(),
             )))
         }
@@ -47,9 +46,17 @@ pub async fn create_processing_pipeline(
                 ql_output_schema.clone(),
                 hcrc.output_add_ddl(),
                 hcrc.output_batch_size(),
-                outp_wr,
+                hcrc.get_output_writer()?,
             )))
         }
+        OutputFormat::ODBC => {
+            debug!("Using ODBC output");
+            Arc::new(Mutex::new(OdbcSink::new(
+                ql_output_schema.clone(),
+                hcrc.get_output(),
+            )?))
+        }
+
     };
     let mut join_handles = Vec::new();
     let (mut output_sender, jh) =

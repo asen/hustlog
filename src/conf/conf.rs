@@ -103,6 +103,7 @@ pub type DynAsyncRead = Box<dyn AsyncRead + Send + Sync>;
 pub enum OutputFormat {
     DEFAULT,
     SQL,
+    ODBC,
 }
 
 #[derive(Debug, Clone)]
@@ -284,7 +285,11 @@ impl HustlogConfig {
     //     Ok(reader)
     // }
 
-    pub fn get_outp(&self) -> Result<DynBoxWrite, DynError> {
+    pub fn get_output(&self) -> &String {
+        &self.output
+    }
+
+    pub fn get_output_writer(&self) -> Result<DynBoxWrite, DynError> {
         let writer: DynBoxWrite = if &self.output == "-" {
             Box::new(BufWriter::new(io::stdout()))
         } else {
@@ -336,6 +341,7 @@ impl HustlogConfig {
     pub fn output_format(&self) -> OutputFormat {
         match self.output_format.as_str() {
             "sql" => OutputFormat::SQL,
+            "odbc" => OutputFormat::ODBC,
             _ => OutputFormat::DEFAULT,
         }
     }

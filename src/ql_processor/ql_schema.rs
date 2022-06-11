@@ -63,15 +63,15 @@ pub struct QlColDef {
 }
 
 impl QlColDef {
-    pub fn new(name: &str, pv_type: ParsedValueType) -> Self {
+    pub fn new(name: &str, pv_type: ParsedValueType, required: bool) -> Self {
         Self {
-            pcd: ParserColDef::new(name, &pv_type),
+            pcd: ParserColDef::new(name, &pv_type, required),
         }
     }
 
     pub fn from(gcd: &GrokColumnDef) -> Self {
         Self {
-            pcd: ParserColDef::new(gcd.col_name(), gcd.col_type()),
+            pcd: ParserColDef::new(gcd.col_name(), gcd.col_type(), gcd.required()),
         }
     }
 
@@ -340,7 +340,7 @@ impl QlSelectCols {
             .collect::<Vec<_>>();
         let mut my_cols = Vec::new();
         for (k, v) in cols {
-            let col = QlColDef::new(k, v?);
+            let col = QlColDef::new(k, v?, false); // TODO required is hard-coded to false
             my_cols.push(col)
         }
         Ok(QlSchema::new(inp_schema.name.clone(), my_cols))

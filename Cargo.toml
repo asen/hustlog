@@ -20,4 +20,5 @@ log = "0.4"
 env_logger = "0.9"
 tokio-rayon = "2.1"
 bstr = "0.2"
+odbc-api = "0.44.0"
 

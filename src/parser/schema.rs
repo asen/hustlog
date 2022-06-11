@@ -5,13 +5,15 @@ use std::sync::Arc;
 pub struct ParserColDef {
     name: Arc<str>,
     pv_type: ParsedValueType,
+    required: bool,
 }
 
 impl ParserColDef {
-    pub fn new(name: &str, pv_type: &ParsedValueType) -> Self {
+    pub fn new(name: &str, pv_type: &ParsedValueType, required: bool) -> Self {
         Self {
             name: Arc::from(name),
             pv_type: pv_type.clone(),
+            required,
         }
     }
 
@@ -21,6 +23,10 @@ impl ParserColDef {
 
     pub fn pv_type(&self) -> &ParsedValueType {
         &self.pv_type
+    }
+
+    pub fn required(&self) -> bool {
+        self.required
     }
 }
 

@@ -25,7 +25,7 @@ impl GrokColumnDef {
         lookup_names: Vec<Arc<String>>,
         required: bool,
     ) -> GrokColumnDef {
-        let pcd = ParserColDef::new(col_name.as_ref(), &col_type);
+        let pcd = ParserColDef::new(col_name.as_ref(), &col_type, required);
         Self {
             pcd,
             lookup_names,
@@ -48,6 +48,8 @@ impl GrokColumnDef {
     pub fn col_type(&self) -> &ParsedValueType {
         &self.pcd.pv_type()
     }
+
+    pub fn required(&self) -> bool { self.required }
 }
 
 #[derive(Debug, Clone)]

@@ -83,6 +83,9 @@ impl OutputProcessor {
                     if let Err(err) = sink.flush() {
                         error!("Failed to flush output sink during shutdown: {:?}", err);
                     }
+                    if let Err(err) = sink.shutdown() {
+                        error!("Failed to shutdown output sinks: {:?}", err);
+                    }
                     break;
                 }
             }
@@ -118,6 +121,15 @@ pub mod tests {
                 flush_called: 0,
             }
         }
+
+        fn output_row(&mut self, _row: QlRow) -> Result<(), DynError> {
+            self.output_row_called += 1;
+            // println!(
+            //     "TestOutputSink.output_row invoked: ROW ({}): {:?}",
+            //     &self.output_row_called, row
+            // );
+            Ok(())
+        }
     }
 
     impl OutputSink for TestOutputSink {
@@ -130,21 +142,23 @@ pub mod tests {
             Ok(())
         }
 
-        fn output_row(&mut self, _row: QlRow) -> Result<(), DynError> {
-            self.output_row_called += 1;
-            // println!(
-            //     "TestOutputSink.output_row invoked: ROW ({}): {:?}",
-            //     &self.output_row_called, row
-            // );
-            Ok(())
-        }
-
         fn flush(&mut self) -> Result<(), DynError> {
             self.flush_called += 1;
             // println!(
             //     "TestOutputSink.flush_called invoked ({})",
             //     &self.flush_called
             // );
+            Ok(())
+        }
+
+        fn output_batch(&mut self, batch: Vec<QlRow>) -> Result<(), DynError> {
+            for r in batch {
+                self.output_row(r)?
+            }
+            Ok(())
+        }
+
+        fn shutdown(&mut self) -> Result<(), DynError> {
             Ok(())
         }
     }
