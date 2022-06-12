@@ -74,7 +74,7 @@ impl SqlCreateSchema {
         }
     }
 
-    pub fn from_ql_schema(schema: &QlSchema) -> Self {
+    pub fn from_ql_schema(schema: &QlSchema, pre_name_opts: Arc<str>, table_opts:Arc<str>) -> Self {
         let col_defs = schema
             .col_defs()
             .iter()
@@ -83,8 +83,8 @@ impl SqlCreateSchema {
         Self {
             table_name: Arc::from(schema.name()),
             col_defs,
-            pre_name_opts: Arc::from("IF NOT EXISTS"), //TODO
-            table_opts: Arc::from(""), // TODO
+            pre_name_opts,
+            table_opts,
         }
     }
 

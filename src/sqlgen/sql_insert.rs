@@ -191,7 +191,7 @@ mod tests {
     fn test_sql_gen1() {
         let schema = test_syslog_schema();
         let ql_schema = Arc::new(QlSchema::from(&schema));
-        let ddl = SqlCreateSchema::from_ql_schema(&ql_schema);
+        let ddl = SqlCreateSchema::from_ql_schema(&ql_schema, Arc::from(""), Arc::from(""));
         let s = ddl.get_create_sql();
         let mut out = get_dummy_outp();
         out.write(s.as_bytes()).unwrap();

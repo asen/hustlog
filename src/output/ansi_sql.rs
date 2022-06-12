@@ -11,9 +11,9 @@ pub struct AnsiSqlOutput {
 }
 
 impl AnsiSqlOutput {
-    pub fn new(schema: Arc<QlSchema>, add_ddl: bool, batch_size: usize, outp: DynBoxWrite) -> Self {
+    pub fn new(schema: Arc<QlSchema>, add_ddl: bool, batch_size: usize, outp: DynBoxWrite, pre_name_opts: &Arc<str>, table_opts:&Arc<str>) -> Self {
         let ddl = if add_ddl {
-            Some(SqlCreateSchema::from_ql_schema(&schema))
+            Some(SqlCreateSchema::from_ql_schema(&schema, Arc::clone(pre_name_opts), Arc::clone(table_opts)))
         } else {
             None
         };

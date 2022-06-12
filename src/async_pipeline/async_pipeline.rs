@@ -47,6 +47,8 @@ pub async fn create_processing_pipeline(
                 hcrc.output_add_ddl(),
                 hcrc.output_batch_size(),
                 hcrc.get_output_writer()?,
+                hcrc.get_ddl_pre_name_opts(),
+                hcrc.get_ddl_table_opts(),
             )))
         }
         OutputFormat::ODBC => {

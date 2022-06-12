@@ -30,6 +30,9 @@ pub struct ExternalConfig {
 
     pub async_channel_size: Option<usize>,
     //pub async_file_processing: Option<bool>,
+
+    pub ddl_pre_name_opts: Option<String>,
+    pub ddl_table_opts: Option<String>,
 }
 
 impl ExternalConfig {
@@ -62,6 +65,8 @@ impl ExternalConfig {
             idle_timeout: None,
             async_channel_size: None,
             // async_file_processing: None,
+            ddl_pre_name_opts: None,
+            ddl_table_opts: None,
         }
     }
 }

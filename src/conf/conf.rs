@@ -126,6 +126,10 @@ pub struct HustlogConfig {
 
     async_channel_size: usize,
     //async_file_processing: bool,
+
+    // ddl_only: bool,
+    ddl_pre_name_opts: Arc<str>,
+    ddl_table_opts:Arc<str>,
 }
 
 impl HustlogConfig {
@@ -153,6 +157,12 @@ impl HustlogConfig {
         // } else {
         //     external_conf.async_file_processing.unwrap_or(true)
         // };
+        let ddl_pre_name_opts =
+            args_or_external_opt_default!(&args, &external_conf, ddl_pre_name_opts, "");
+        let ddl_pre_name_opts: Arc<str> = Arc::from(ddl_pre_name_opts.as_ref());
+        let ddl_table_opts =
+            args_or_external_opt_default!(&args, &external_conf, ddl_table_opts, "");
+        let ddl_table_opts: Arc<str> = Arc::from(ddl_table_opts.as_ref());
         Ok(Self {
             input: input.to_string(),
             merge_multi_line: merge_multi_line,
@@ -177,6 +187,8 @@ impl HustlogConfig {
                 &1000
             ),
             //async_file_processing,
+            ddl_pre_name_opts,
+            ddl_table_opts,
         })
     }
 
@@ -413,6 +425,18 @@ impl HustlogConfig {
     pub fn get_async_channel_size(&self) -> usize {
         self.async_channel_size
     }
+
+    // pub fn get_ddl_only(&self) -> bool {
+    //     self.ddl_only
+    // }
+
+    pub fn get_ddl_pre_name_opts(&self) -> &Arc<str> {
+        &self.ddl_pre_name_opts
+    }
+
+    pub fn get_ddl_table_opts(&self) -> &Arc<str> {
+        &self.ddl_table_opts
+    }
 }
 
 #[cfg(test)]
@@ -447,6 +471,8 @@ mod tests {
             idle_timeout: None,
             async_channel_size: None,
             //async_file_processing: None,
+            ddl_pre_name_opts: None,
+            ddl_table_opts: None,
         }
     }
 

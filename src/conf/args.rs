@@ -138,6 +138,21 @@ pub struct MyArgs {
     /// Default is 1000
     #[clap(long)]
     pub async_channel_size: Option<usize>,
+
+    // /// TODO - print DDL (CREATE statement) and exit, for now just provide an empty input file
+    // #[clap(long)]
+    // pub ddl_only: bool,
+
+    /// Additional CREATE TABLE options inserted before the table name / column defs
+    // e.g. --ddl-pre-name-opts "IF NOT EXISTS"
+    #[clap(long)]
+    pub ddl_pre_name_opts: Option<String>,
+
+
+    /// Additional CREATE TABLE options inserted after the table name / column defs
+    // e.g. table engine and exit.
+    #[clap(long)]
+    pub ddl_table_opts: Option<String>,
 }
 
 impl MyArgs {
