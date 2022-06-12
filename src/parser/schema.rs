@@ -31,7 +31,7 @@ impl ParserColDef {
 }
 
 pub trait ParserSchema {
-    fn name(&self) -> &str;
+    fn output_name(&self) -> &str;
     fn col_defs(&self) -> Vec<&ParserColDef>;
 }
 

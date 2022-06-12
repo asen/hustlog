@@ -101,14 +101,14 @@ impl QlSchema {
             .map(|gcd| QlColDef::from(gcd))
             .collect::<Vec<_>>();
         Self {
-            name: Arc::from(gs.name()),
+            name: Arc::from(gs.output_name()),
             cols,
         }
     }
 }
 
 impl ParserSchema for QlSchema {
-    fn name(&self) -> &str {
+    fn output_name(&self) -> &str {
         self.name.as_ref()
     }
 

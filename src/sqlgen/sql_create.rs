@@ -81,7 +81,7 @@ impl SqlCreateSchema {
             .map(|&x| SqlCreateCol::from_parser_col_def(x))
             .collect();
         Self {
-            table_name: Arc::from(schema.name()),
+            table_name: Arc::from(schema.output_name()),
             col_defs,
             pre_name_opts,
             table_opts,

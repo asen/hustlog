@@ -72,7 +72,7 @@ impl OdbcSink {
             .join(", ");
         let qry = format!(
             "INSERT INTO {} ({}) VALUES ({})",
-            self.schema.name(),
+            self.schema.output_name(),
             col_names,
             values_str
         );

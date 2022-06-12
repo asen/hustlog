@@ -279,12 +279,15 @@ impl HustlogConfig {
         );
         let grok_with_alias_only =
             args_or_external_bool_default!(&args, &external_conf, grok_with_alias_only, false);
+        let output_table_name = args_or_external_opt_default!(&args, &external_conf, output_table_name, pattern);
+
         Ok(GrokSchema::new(
             pattern.clone(),
             grok_schema_cols,
             !grok_ignore_default_patterns,
             extra_patterns,
             grok_with_alias_only,
+            output_table_name.clone()
         ))
     }
 
@@ -452,6 +455,7 @@ mod tests {
             output_format: None,
             output_batch_size: None,
             output_add_ddl: false,
+            output_table_name: None,
             grok_pattern: Some("SYSLOGLINE".to_string()),
             grok_patterns_file: None,
             grok_extra_patterns: vec![],

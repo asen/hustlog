@@ -82,7 +82,7 @@ impl BatchedInserts {
             return Ok(());
         }
         self.outp.write("INSERT INTO ".as_bytes())?;
-        self.outp.write(self.schema.name().as_bytes())?;
+        self.outp.write(self.schema.output_name().as_bytes())?;
         self.outp.write(" (".as_bytes())?;
         let cn = self
             .schema

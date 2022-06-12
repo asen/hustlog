@@ -59,6 +59,7 @@ pub struct GrokSchema {
     load_default: bool,
     extra_patterns: Vec<(String, String)>,
     grok_with_alias_only: bool,
+    output_name: String,
 }
 
 impl GrokSchema {
@@ -68,6 +69,7 @@ impl GrokSchema {
         load_default: bool,
         extra_patterns: Vec<(String, String)>,
         grok_with_alias_only: bool,
+        output_name: String,
     ) -> GrokSchema {
         Self {
             pattern,
@@ -75,6 +77,7 @@ impl GrokSchema {
             load_default,
             extra_patterns,
             grok_with_alias_only,
+            output_name,
         }
     }
 
@@ -84,8 +87,8 @@ impl GrokSchema {
 }
 
 impl ParserSchema for GrokSchema {
-    fn name(&self) -> &str {
-        &self.pattern
+    fn output_name(&self) -> &str {
+        &self.output_name
     }
 
     fn col_defs(&self) -> Vec<&ParserColDef> {
@@ -206,6 +209,7 @@ pub mod tests {
             ],
             grok_with_alias_only: false,
             extra_patterns: vec![],
+            output_name: String::from("SYSLOGLINE"),
         }
     }
 
@@ -238,6 +242,7 @@ pub mod tests {
                 "DUMMY".to_string(),
                 "%{NUMBER:num} +%{GREEDYDATA:message}".to_string(),
             )],
+            output_name: String::from("DUMMY"),
         }
     }
 
@@ -276,6 +281,7 @@ pub mod tests {
                     String::from("%{NOSPACES:logts} %{MESSAGE:msg}"),
                 ),
             ],
+            output_name: String::from("test_pat"),
         };
         let parser = GrokParser::new(schema).unwrap();
         let lines = vec![

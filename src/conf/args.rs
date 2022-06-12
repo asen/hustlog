@@ -59,6 +59,11 @@ pub struct MyArgs {
     #[clap(long)]
     pub output_add_ddl: bool,
 
+    /// The table name to use when outputting SQL inserts or wtiting to odbc.
+    /// If not specified the --grok-pattern value will be used.
+    #[clap(long)]
+    pub output_table_name: Option<String>,
+
     /// Grok Pattern name to use. This is required for any parsing to happen
     /// and must be the name of a pre-defined or custom grok pattern.
     /// Use the special --grok-list-default-patterns option to list the
